@@ -33,24 +33,119 @@ async def update_calendar_list(service):
         MIN = 60
         await asyncio.sleep(30 * MIN)
 
+# TODO: timezone
+class Notifier:
+    class Entry:
+        def __init__(self, calendar, event):
+            self.calendar = calendar
+            self.event = event
+
+    def __init__(self):
+        self.time = datetime.datetime.now()
+        self.evening_notify_done = False
+        self.morning_notify_done = False
+        self.events = []
+        self.morning_notify_hour = 8
+        self.evening_notify_hour = 20
+
+    def reinit(self):
+        self.events = []
+        self.prev = self.time
+        self.time = datetime.datetime.now()
+        if self.time.day != self.prev.day:
+            self.evening_notify_done = False
+            self.morning_notify_done = False
+
+    def __do_evening_notify(self):
+        if self.evening_notify_done:
+            return False
+        if self.time.hour >= self.evening_notify_hour:
+            self.evening_notify_done = True
+            return True
+        return False
+
+    def __do_morning_notify(self):
+        if self.evening_notify_done:
+            return False
+        if self.time.hour >= self.morning_notify_hour:
+            self.evening_notify_done = True
+            return True
+        return False
+
+    def __is_today_event(self, event):
+        start = event.event['start']
+        if 'date' in start:
+            date = datetime.datetime.fromisoformat(start['date'])
+            return date.date() == datetime.date.today()
+        else:
+            return False
+
+    def __is_tomorrow_event(self, event):
+        start = event.event['start']
+        if 'date' in start:
+            date = datetime.datetime.fromisoformat(start['date'])
+            tomorrow = datetime.date.today() + datetime.timedelta(days=1) 
+            return date.date() == tomorrow
+        else:
+            return False
+
+    def __is_upcoming_event(self, event):
+        start = event.event['start']
+        if 'date' in start:
+            # Whole day event. Will be notified morning/evening notify
+            return False
+        if 'dateTime' in start:
+            dateTime = datetime.datetime.fromisoformat(start['dateTime'])
+            diff = dateTime.timestamp() - self.time.timestamp()
+            return 0 < diff and diff < 1 * 60 * 60
+        return False
+
+    def __notify_event(self, event):
+        print(event.calendar, event.event['summary'])
+
+    def notify(self):
+        __do_morning_notify = self.__do_morning_notify()
+        __do_evening_notify = self.__do_evening_notify()
+        for event in self.events:
+            if __do_evening_notify and self.__is_tomorrow_event(event):
+                self.__notify_event(event)
+            if __do_morning_notify and self.__is_today_event(event):
+                self.__notify_event(event)
+            if self.__is_upcoming_event(event):
+                self.__notify_event(event)
+
+    def extend_events(self, summary, events):
+        for event in events:
+            self.events.append(Notifier.Entry(summary, event))
+        
 async def notify_upcoming_events(service):
+    notifier = Notifier()
     while True:
         total_events = []
-        print(datetime.datetime.utcnow())
-        now = datetime.datetime.utcnow().isoformat() + 'Z' # 'Z' indicates UTC time
+        now = datetime.datetime.utcnow()
+        print('Check event at', now)
+        notifier.reinit()
 
+        now_utc = now.isoformat() + 'Z' # 'Z' indicates UTC time
         for calendar in calendars:
             summary = calendar['summary']
-            events_result = service.events().list(calendarId=calendar['id'], timeMin=now,
+            events_result = service.events().list(calendarId=calendar['id'], timeMin=now_utc,
                                                   maxResults=10, singleEvents=True,
                                                   orderBy='startTime').execute()
             events = events_result.get('items')
-            total_events.extend(events)
+            notifier.extend_events(summary, events)
+        notifier.notify()
+        print("notification done")
 
-        for event in total_events:
-            pass
-
-        await asyncio.sleep(10)
+        # Recalculate now
+        now_ts = datetime.datetime.utcnow().timestamp()
+        PERIOD = 30 * 60
+        def calc_until(now, period=PERIOD):
+            import math
+            return (period * (math.floor(now / period))) + period
+        until_ts = calc_until(now_ts)
+        print('Will check again after', until_ts - now_ts)
+        await asyncio.sleep(until_ts - now_ts)
         
 async def coroutine_gather(service):
     coroutines = [update_calendar_list(service), notify_upcoming_events(service)]
@@ -82,6 +177,7 @@ def main():
         # Save the credentials for the next run
         with open(TOKEN_PATH, 'w') as token:
             token.write(creds.to_json())
+
 
     try:
         service = build('calendar', 'v3', credentials=creds)
