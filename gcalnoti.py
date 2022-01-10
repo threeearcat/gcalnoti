@@ -1,4 +1,9 @@
 #!/usr/bin/env python
+import gi
+gi.require_version('Notify', '0.7')
+from gi.repository import Notify
+Notify.init('gcalnoti')
+
 import os.path
 import datetime
 import asyncio
@@ -93,26 +98,34 @@ class Notifier:
         start = event.event['start']
         if 'date' in start:
             # Whole day event. Will be notified morning/evening notify
-            return False
-        if 'dateTime' in start:
+            return None
+        elif 'dateTime' in start:
             dateTime = datetime.datetime.fromisoformat(start['dateTime'])
             diff = dateTime.timestamp() - self.time.timestamp()
-            return 0 < diff and diff < 1 * 60 * 60
-        return False
+            if diff < 0 or diff > 1 * 60 * 60:
+                return None
+            elif diff < 30 * 60:
+                return "30 minutes"
+            else:
+                return "1 hour"
+        else:
+            return None
 
-    def __notify_event(self, event):
-        print(event.calendar, event.event['summary'])
+    def __notify_event(self, event, title):
+        print(title, event.calendar, event.event['summary'])
+        notify = Notify.Notification.new(title, event.calendar + ': ' + event.event['summary'])
+        notify.show()
 
     def notify(self):
         __do_morning_notify = self.__do_morning_notify()
         __do_evening_notify = self.__do_evening_notify()
         for event in self.events:
             if __do_evening_notify and self.__is_tomorrow_event(event):
-                self.__notify_event(event)
-            if __do_morning_notify and self.__is_today_event(event):
-                self.__notify_event(event)
-            if self.__is_upcoming_event(event):
-                self.__notify_event(event)
+                self.__notify_event(event, 'Tomorrow')
+            elif __do_morning_notify and self.__is_today_event(event):
+                self.__notify_event(event, 'Today')
+            elif (time_remaining := self.__is_upcoming_event(event)) is not None:
+                self.__notify_event(event, 'Upcomming - ' + time_remaining + ' left')
 
     def extend_events(self, summary, events):
         for event in events:
