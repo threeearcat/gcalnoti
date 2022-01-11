@@ -118,8 +118,14 @@ class Notifier:
             return None
 
     def __notify_event(self, event, title):
+        time = ''
+        start = event.event['start']
+        if 'dateTime' in start:
+            dateTime = datetime.datetime.fromisoformat(start['dateTime'])
+            time = ' at ' + dateTime.strftime('%H:%M')
+
         print(title, event.calendar, event.event['summary'])
-        notify = Notify.Notification.new(title, event.calendar + ': ' + event.event['summary'])
+        notify = Notify.Notification.new(title, event.calendar + ': ' + event.event['summary'] + time)
         notify.show()
 
     def notify(self):
@@ -165,7 +171,7 @@ async def notify_upcoming_events(service):
         until_ts = calc_until(now_ts)
         print('Will check again after', until_ts - now_ts)
         await asyncio.sleep(until_ts - now_ts)
-        
+
 async def coroutine_gather(service):
     coroutines = [update_calendar_list(service), notify_upcoming_events(service)]
     return await asyncio.gather(*coroutines, return_exceptions=True)
@@ -196,7 +202,6 @@ def main():
         # Save the credentials for the next run
         with open(TOKEN_PATH, 'w') as token:
             token.write(creds.to_json())
-
 
     try:
         service = build('calendar', 'v3', credentials=creds)
