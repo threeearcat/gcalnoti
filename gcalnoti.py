@@ -50,8 +50,8 @@ class Notifier:
         self.evening_notify_done = False
         self.morning_notify_done = False
         self.events = []
-        self.morning_notify_hour = 8
-        self.evening_notify_hour = 20
+        self.morning_notify_hour = 10
+        self.evening_notify_hour = 21
 
     def reinit(self):
         self.events = []
