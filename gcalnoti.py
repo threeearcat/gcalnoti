@@ -65,15 +65,17 @@ class Notifier:
         if self.evening_notify_done:
             return False
         if self.time.hour >= self.evening_notify_hour:
+            print("do evening notify")
             self.evening_notify_done = True
             return True
         return False
 
     def __do_morning_notify(self):
-        if self.evening_notify_done:
+        if self.morning_notify_done:
             return False
         if self.time.hour >= self.morning_notify_hour:
-            self.evening_notify_done = True
+            print("do morning notify")
+            self.morning_notify_done = True
             return True
         return False
 
@@ -122,15 +124,15 @@ class Notifier:
         for event in self.events:
             if __do_evening_notify and self.__is_tomorrow_event(event):
                 self.__notify_event(event, 'Tomorrow')
-            elif __do_morning_notify and self.__is_today_event(event):
+            if __do_morning_notify and self.__is_today_event(event):
                 self.__notify_event(event, 'Today')
-            elif (time_remaining := self.__is_upcoming_event(event)) is not None:
+            if (time_remaining := self.__is_upcoming_event(event)) is not None:
                 self.__notify_event(event, 'Upcomming - ' + time_remaining + ' left')
 
     def extend_events(self, summary, events):
         for event in events:
             self.events.append(Notifier.Entry(summary, event))
-        
+
 async def notify_upcoming_events(service):
     notifier = Notifier()
     while True:
