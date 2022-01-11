@@ -89,10 +89,14 @@ class Notifier:
 
     def __is_tomorrow_event(self, event):
         start = event.event['start']
+        tomorrow = datetime.date.today() + datetime.timedelta(days=1)
         if 'date' in start:
             date = datetime.datetime.fromisoformat(start['date'])
-            tomorrow = datetime.date.today() + datetime.timedelta(days=1) 
             return date.date() == tomorrow
+        elif 'dateTime' in start:
+            dateTime = datetime.datetime.fromisoformat(start['dateTime'])
+            if dateTime.hour < 12 and dateTime.date() == tomorrow:
+                return True
         else:
             return False
 
