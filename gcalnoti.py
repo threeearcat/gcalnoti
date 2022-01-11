@@ -81,9 +81,14 @@ class Notifier:
 
     def __is_today_event(self, event):
         start = event.event['start']
+        today = datetime.date.today()
         if 'date' in start:
             date = datetime.datetime.fromisoformat(start['date'])
-            return date.date() == datetime.date.today()
+            return date.date() == today
+        elif 'dateTime' in start:
+            dateTime = datetime.datetime.fromisoformat(start['dateTime'])
+            if dateTime.hour <= 15 and dateTime.date() == today:
+                return True
         else:
             return False
 
