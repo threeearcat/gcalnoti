@@ -20,21 +20,37 @@ TOKEN_PATH = os.path.join(os.environ['HOME'], '.credentials', 'gcalnoti.json')
 
 calendars = []
 
-async def update_calendar_list(service):
+def filter_calendar(calendar, regexps):
+    import re
+    summary = calendar['summary']
+    return any(re.match(regexp, summary) for regexp in regexps)
+
+def filter_calendars(calendars, regexps):
+    return [calendar for calendar in calendars if not filter_calendar(calendar, regexps)]
+
+def update_calendar_list(service, conf):
     global calendars
+    page_token = None
+    new_calendars = []
     while True:
-        page_token = None
-        new_calendars = []
-        while True:
-            calendar_list = service.calendarList().list(
-                pageToken=page_token).execute()
-            new_calendars.extend(calendar_list['items'])
-            page_token = calendar_list.get('nextPageToken')
-            if not page_token:
-                break
+        calendar_list = service.calendarList().list(
+            pageToken=page_token).execute()
+        new_calendars.extend(calendar_list['items'])
+        page_token = calendar_list.get('nextPageToken')
+        if not page_token:
+            break
 
-        calendars = new_calendars
+    if 'ignore' in conf:
+        new_calendars = filter_calendars(new_calendars, conf['ignore'])
 
+    calendars = new_calendars
+    # for calendar in new_calendars:
+    #     print(calendar['summary'])
+
+
+async def update_calendar_list_loop(service, conf):
+    while True:
+        update_calendar_list(service, conf)
         MIN = 60
         await asyncio.sleep(30 * MIN)
 
@@ -148,7 +164,7 @@ class Notifier:
         for event in events:
             self.events.append(Notifier.Entry(summary, event))
 
-async def notify_upcoming_events(service):
+async def notify_upcoming_events(service, conf):
     notifier = Notifier()
     while True:
         total_events = []
@@ -177,19 +193,34 @@ async def notify_upcoming_events(service):
         print('Will check again after', until_ts - now_ts)
         await asyncio.sleep(until_ts - now_ts)
 
-async def coroutine_gather(service):
-    coroutines = [update_calendar_list(service), notify_upcoming_events(service)]
+async def coroutine_gather(service, conf):
+    coroutines = [update_calendar_list_loop(service, conf), notify_upcoming_events(service, conf)]
     return await asyncio.gather(*coroutines, return_exceptions=True)
 
-def notification_loop(service):
+def notification_loop(service, conf):
     try:
-        asyncio.run(coroutine_gather(service))
+        asyncio.run(coroutine_gather(service, conf))
     except Error:
         print(e)
+
+def load_conf(filename):
+    import json
+    if not isinstance(filename, str):
+        return {}
+    with open(filename) as f:
+        conf = json.load(f)
+        return conf
 
 def main():
     """Notify upcoming events from Google calendars
     """
+    import argparse
+    parser = argparse.ArgumentParser(description='Notify upcoming events from Google calendars')
+    parser.add_argument('--conf', action='store', help='JSON configuration')
+    args = parser.parse_args()
+
+    conf = load_conf(args.conf)
+
     creds = None
     # The file TOKEN_PATH stores the user's access and refresh
     # tokens, and is created automatically when the authorization flow
@@ -210,7 +241,7 @@ def main():
 
     try:
         service = build('calendar', 'v3', credentials=creds)
-        notification_loop(service)
+        notification_loop(service, conf)
     except HttpError as err:
         print(err)
 
