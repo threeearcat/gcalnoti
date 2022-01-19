@@ -61,13 +61,14 @@ class Notifier:
             self.calendar = calendar
             self.event = event
 
-    def __init__(self):
+    def __init__(self, conf):
         self.time = datetime.datetime.now()
         self.evening_notify_done = False
         self.morning_notify_done = False
         self.events = []
-        self.morning_notify_hour = 10
-        self.evening_notify_hour = 21
+        self.morning_notify_hour = 10 if not 'morning_notify' in conf else conf['morning_notify']
+        self.evening_notify_hour = 21 if not 'evening_notify' in conf else conf['evening_notify']
+        self.reminder_threshold = 15 if not 'reminder_threshold' in conf else conf['reminder_threshold']
 
     def reinit(self):
         self.events = []
@@ -103,7 +104,7 @@ class Notifier:
             return date.date() == today
         elif 'dateTime' in start:
             dateTime = datetime.datetime.fromisoformat(start['dateTime'])
-            if dateTime.hour <= 15 and dateTime.date() == today:
+            if dateTime.hour < self.reminder_threshold and dateTime.date() == today:
                 return True
         else:
             return False
@@ -116,7 +117,7 @@ class Notifier:
             return date.date() == tomorrow
         elif 'dateTime' in start:
             dateTime = datetime.datetime.fromisoformat(start['dateTime'])
-            if dateTime.hour < 12 and dateTime.date() == tomorrow:
+            if dateTime.hour < self.reminder_threshold and dateTime.date() == tomorrow:
                 return True
         else:
             return False
@@ -165,7 +166,7 @@ class Notifier:
             self.events.append(Notifier.Entry(summary, event))
 
 async def notify_upcoming_events(service, conf):
-    notifier = Notifier()
+    notifier = Notifier(conf)
     while True:
         total_events = []
         now = datetime.datetime.utcnow()
