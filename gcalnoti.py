@@ -130,7 +130,7 @@ class Notifier:
         elif 'dateTime' in start:
             dateTime = datetime.datetime.fromisoformat(start['dateTime'])
             diff = dateTime.timestamp() - self.time.timestamp()
-            if diff < 0 or diff > 1 * 60 * 60:
+            if diff < 5 * 60 or diff > 1 * 60 * 60:
                 return None
             elif diff < 30 * 60:
                 return "30 minutes"
@@ -138,6 +138,17 @@ class Notifier:
                 return "1 hour"
         else:
             return None
+
+    def __is_current_event(self, event):
+        start = event.event['start']
+        if 'date' in start:
+            return False
+        elif 'dateTime' in start:
+            dateTime = datetime.datetime.fromisoformat(start['dateTime'])
+            diff = dateTime.timestamp() - self.time.timestamp()
+            return diff < 5 * 60 and diff > -(5 * 60)
+        else:
+            return False
 
     def __notify_event(self, event, title):
         time = ''
@@ -160,6 +171,8 @@ class Notifier:
                 self.__notify_event(event, 'Today')
             if (time_remaining := self.__is_upcoming_event(event)) is not None:
                 self.__notify_event(event, 'Upcomming - ' + time_remaining + ' left')
+            if self.__is_current_event(event):
+                self.__notify_event(event, "Now")
 
     def extend_events(self, summary, events):
         for event in events:
@@ -168,7 +181,6 @@ class Notifier:
 async def notify_upcoming_events(service, conf):
     notifier = Notifier(conf)
     while True:
-        total_events = []
         now = datetime.datetime.utcnow()
         print('Check event at', now)
         notifier.reinit()
