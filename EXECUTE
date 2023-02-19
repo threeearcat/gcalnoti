@@ -1,0 +1,5 @@
+#!/bin/sh -e
+
+dir=$(dirname $(which $0))
+
+(cd $dir; source ./venv/bin/activate; ./gcalnoti.py & echo $! > $dir/pid)
