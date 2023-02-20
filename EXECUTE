@@ -2,4 +2,4 @@
 
 dir=$(dirname $(which $0))
 
-(cd $dir; source ./venv/bin/activate; ./gcalnoti.py & echo $! > $dir/pid)
+(cd $dir; source ./venv/bin/activate; ./gcalnoti.py --conf gcalnoti.conf & echo $! > $dir/pid)
