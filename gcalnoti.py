@@ -211,7 +211,7 @@ class Notifier:
             self.events.append(Notifier.Entry(summary, event))
 
 
-def fetch_events(service, notifier):
+def fetch_events(service, notifier, now):
     now_utc = now.isoformat() + "Z"  # 'Z' indicates UTC time
     for calendar in calendars:
         summary = calendar["summary"]
@@ -238,8 +238,8 @@ async def notify_upcoming_events(service, conf):
         notifier.reinit()
         retrieve_failed = False
         try:
-            fetch_events(service, notifier)
-        except e:
+            fetch_events(service, notifier, now)
+        except Exception:
             notifier.__notify_raw(app_name, auth_error)
             retrieve_failed = True
         notifier.notify()
