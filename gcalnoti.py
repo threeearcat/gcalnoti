@@ -22,6 +22,9 @@ TOKEN_PATH = os.path.join(os.environ["HOME"], ".credentials", "gcalnoti.json")
 
 calendars = []
 
+app_name = "gcalnotiy"
+auth_error = "Failed to fetch calendars. Need to re-authenticate."
+
 
 def filter_calendar(calendar, regexps):
     import re
@@ -36,8 +39,7 @@ def filter_calendars(calendars, regexps):
     ]
 
 
-def update_calendar_list(service, conf):
-    global calendars
+def fetch_calendar_list(service, conf):
     page_token = None
     new_calendars = []
     while True:
@@ -46,6 +48,20 @@ def update_calendar_list(service, conf):
         page_token = calendar_list.get("nextPageToken")
         if not page_token:
             break
+    return new_calendars
+
+
+def update_calendar_list(service, conf):
+    global calendars
+
+    try:
+        new_calendars = fetch_calendar_list(service, conf)
+    except Exception as e:
+        # Failed to fetch the calendar list maybe due to the token
+        # expiration. notify_upcoming_events() will notify, so we just
+        # return in this function
+        print(e)
+        return
 
     if "ignore" in conf:
         new_calendars = filter_calendars(new_calendars, conf["ignore"])
@@ -164,18 +180,18 @@ class Notifier:
         else:
             return False
 
+    def __notify_raw(self, title, msg):
+        notify = Notify.Notification.new(title, msg)
+        notify.show()
+
     def __notify_event(self, event, title):
         time = ""
         start = event.event["start"]
         if "dateTime" in start:
             dateTime = datetime.datetime.fromisoformat(start["dateTime"])
             time = " at " + dateTime.strftime("%H:%M")
-
         print(title, event.calendar, event.event["summary"])
-        notify = Notify.Notification.new(
-            title, event.calendar + ": " + event.event["summary"] + time
-        )
-        notify.show()
+        self.__notify_raw(title, event.calendar + ": " + event.event["summary"] + time)
 
     def notify(self):
         __do_morning_notify = self.__do_morning_notify()
@@ -195,42 +211,50 @@ class Notifier:
             self.events.append(Notifier.Entry(summary, event))
 
 
+def fetch_events(service, notifier):
+    now_utc = now.isoformat() + "Z"  # 'Z' indicates UTC time
+    for calendar in calendars:
+        summary = calendar["summary"]
+        events_result = (
+            service.events()
+            .list(
+                calendarId=calendar["id"],
+                timeMin=now_utc,
+                maxResults=10,
+                singleEvents=True,
+                orderBy="startTime",
+            )
+            .execute()
+        )
+        events = events_result.get("items")
+        notifier.extend_events(summary, events)
+
+
 async def notify_upcoming_events(service, conf):
     notifier = Notifier(conf)
     while True:
         now = datetime.datetime.utcnow()
         print("Check event at", now)
         notifier.reinit()
-
-        now_utc = now.isoformat() + "Z"  # 'Z' indicates UTC time
-        for calendar in calendars:
-            summary = calendar["summary"]
-            events_result = (
-                service.events()
-                .list(
-                    calendarId=calendar["id"],
-                    timeMin=now_utc,
-                    maxResults=10,
-                    singleEvents=True,
-                    orderBy="startTime",
-                )
-                .execute()
-            )
-            events = events_result.get("items")
-            notifier.extend_events(summary, events)
+        retrieve_failed = False
+        try:
+            fetch_events(service, notifier)
+        except e:
+            notifier.__notify_raw(app_name, auth_error)
+            retrieve_failed = True
         notifier.notify()
         print("notification done")
 
         # Recalculate now
         now_ts = datetime.datetime.utcnow().timestamp()
-        PERIOD = 30 * 60
+        period = 60 * (30 if not retrieve_failed else 300)
 
-        def calc_until(now, period=PERIOD):
+        def calc_until(now, period):
             import math
 
             return (period * (math.floor(now / period))) + period
 
-        until_ts = calc_until(now_ts)
+        until_ts = calc_until(now_ts, period)
         print("Will check again after", until_ts - now_ts)
         await asyncio.sleep(until_ts - now_ts)
 
@@ -246,7 +270,7 @@ async def coroutine_gather(service, conf):
 def notification_loop(service, conf):
     try:
         asyncio.run(coroutine_gather(service, conf))
-    except Error:
+    except Exception:
         print(e)
 
 
@@ -281,7 +305,13 @@ def main():
     # If there are no (valid) credentials available, let the user log in.
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
+            except Exception as e:
+                print(e)
+                notify = Notify.Notification.new(app_name, auth_error)
+                notify.show()
+                exit(-1)
         else:
             flow = InstalledAppFlow.from_client_secrets_file(
                 "./client_secret.json", SCOPES
