@@ -6,10 +6,10 @@ from gi.repository import Notify
 
 Notify.init("gcalnoti")
 
-import atexit
 import os.path
 import datetime
 import asyncio
+import signal
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -26,6 +26,11 @@ calendars = []
 app_name = "GCalNoti"
 auth_error = "Failed to fetch calendars. Need to re-authenticate."
 exit_message = "Exiting..."
+
+
+def __notify_raw(title, msg):
+    notify = Notify.Notification.new(title, msg)
+    notify.show()
 
 
 def filter_calendar(calendar, regexps):
@@ -182,10 +187,6 @@ class Notifier:
         else:
             return False
 
-    def __notify_raw(self, title, msg):
-        notify = Notify.Notification.new(title, msg)
-        notify.show()
-
     def __notify_event(self, event, title):
         time = ""
         start = event.event["start"]
@@ -193,7 +194,7 @@ class Notifier:
             dateTime = datetime.datetime.fromisoformat(start["dateTime"])
             time = " at " + dateTime.strftime("%H:%M")
         print(title, event.calendar, event.event["summary"])
-        self.__notify_raw(title, event.calendar + ": " + event.event["summary"] + time)
+        __notify_raw(title, event.calendar + ": " + event.event["summary"] + time)
 
     def notify(self):
         __do_morning_notify = self.__do_morning_notify()
@@ -242,7 +243,7 @@ async def notify_upcoming_events(service, conf):
         try:
             fetch_events(service, notifier, now)
         except Exception:
-            notifier.__notify_raw(app_name, auth_error)
+            __notify_raw(app_name, auth_error)
             retrieve_failed = True
         notifier.notify()
         print("notification done")
@@ -272,7 +273,7 @@ async def coroutine_gather(service, conf):
 def notification_loop(service, conf):
     try:
         asyncio.run(coroutine_gather(service, conf))
-    except Exception:
+    except Exception as e:
         print(e)
 
 
@@ -287,8 +288,7 @@ def load_conf(filename):
 
 
 def exit_callback():
-    notify = Notify.Notification.new(app_name, exit_message)
-    notify.show()
+    __notify_raw(app_name, exit_message)
 
 
 def main():
@@ -329,7 +329,6 @@ def main():
             token.write(creds.to_json())
 
     try:
-        atexit.register(exit_callback)
         service = build("calendar", "v3", credentials=creds)
         notification_loop(service, conf)
     except HttpError as err:
@@ -337,4 +336,16 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    signals = [
+        signal.SIGINT,
+        signal.SIGUSR1,
+        signal.SIGUSR2,
+        signal.SIGTERM,
+        signal.SIGCHLD,
+    ]
+    for sign in signals:
+        signal.signal(sign, exit_callback)
+    try:
+        main()
+    finally:
+        exit_callback()
