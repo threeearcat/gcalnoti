@@ -6,6 +6,7 @@ from gi.repository import Notify
 
 Notify.init("gcalnoti")
 
+import atexit
 import os.path
 import datetime
 import asyncio
@@ -22,8 +23,9 @@ TOKEN_PATH = os.path.join(os.environ["HOME"], ".credentials", "gcalnoti.json")
 
 calendars = []
 
-app_name = "gcalnotiy"
+app_name = "GCalNoti"
 auth_error = "Failed to fetch calendars. Need to re-authenticate."
+exit_message = "Exiting..."
 
 
 def filter_calendar(calendar, regexps):
@@ -284,6 +286,11 @@ def load_conf(filename):
         return conf
 
 
+def exit_callback():
+    notify = Notify.Notification.new(app_name, exit_message)
+    notify.show()
+
+
 def main():
     """Notify upcoming events from Google calendars"""
     import argparse
@@ -322,6 +329,7 @@ def main():
             token.write(creds.to_json())
 
     try:
+        atexit.register(exit_callback)
         service = build("calendar", "v3", credentials=creds)
         notification_loop(service, conf)
     except HttpError as err:
