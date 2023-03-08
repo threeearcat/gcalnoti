@@ -248,11 +248,15 @@ class Notifier:
 
         self.notify_foreach_event(should_notify_event)
 
-    def notify_today(self):
-        def is_today_event(event):
-            return self.__is_today_event(event), "Today"
+    def remind_events(self):
+        def should_remind_event(event):
+            now = datetime.datetime.now()
+            if now.hour >= self.evening_notify_hour:
+                return self.__is_tomorrow_event(event), "Tomorrow"
+            else:
+                return self.__is_today_event(event), "Today"
 
-        self.notify_foreach_event(is_today_event)
+        self.notify_foreach_event(should_remind_event)
 
     def extend_events(self, summary, events):
         for event in events:
@@ -319,7 +323,7 @@ def handle_remind(args):
     global notifier
     if notifier == None:
         return
-    notifier.notify_today()
+    notifier.remind_events()
 
 
 def handle_command(command):
