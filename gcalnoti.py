@@ -143,10 +143,12 @@ class Notifier:
 
     def __is_today_event(self, event):
         start = event.event["start"]
+        end = event.event["end"]
         today = datetime.date.today()
         if "date" in start:
-            date = datetime.datetime.fromisoformat(start["date"])
-            return date.date() == today
+            start_date = datetime.datetime.fromisoformat(start["date"])
+            end_date = datetime.datetime.fromisoformat(end["date"])
+            return start_date.date() <= today and today <= end_date.date()
         elif "dateTime" in start:
             dateTime = datetime.datetime.fromisoformat(start["dateTime"])
             return dateTime.date() == today
@@ -154,11 +156,14 @@ class Notifier:
             return False
 
     def __is_tomorrow_event(self, event):
+        # TODO: Refactoring
         start = event.event["start"]
+        end = event.event["end"]
         tomorrow = datetime.date.today() + datetime.timedelta(days=1)
         if "date" in start:
-            date = datetime.datetime.fromisoformat(start["date"])
-            return date.date() == tomorrow
+            start_date = datetime.datetime.fromisoformat(start["date"])
+            end_date = datetime.datetime.fromisoformat(end["date"])
+            return start_date.date() <= tomorrow and tomorrow <= end_date.date()
         elif "dateTime" in start:
             dateTime = datetime.datetime.fromisoformat(start["dateTime"])
             if dateTime.hour < self.reminder_threshold and dateTime.date() == tomorrow:
