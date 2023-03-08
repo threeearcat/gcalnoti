@@ -27,6 +27,8 @@ app_name = "GCalNoti"
 auth_error = "Failed to fetch calendars. Need to re-authenticate."
 exit_message = "Exiting..."
 
+notifier = None
+
 
 def filter_calendar(calendar, regexps):
     import re
@@ -164,22 +166,23 @@ class Notifier:
         else:
             return False
 
-    def __is_upcoming_event(self, event):
+    def __time_remaining(self, event):
+        unknown = "Unknown"
         start = event.event["start"]
         if "date" in start:
             # Whole day event. Will be notified morning/evening notify
-            return None
+            return unknown
         elif "dateTime" in start:
             dateTime = datetime.datetime.fromisoformat(start["dateTime"])
             diff = dateTime.timestamp() - self.time.timestamp()
             if diff < 5 * 60 or diff > 1 * 60 * 60:
-                return None
+                return unknown
             elif diff < 30 * 60:
                 return "30 minutes"
             else:
                 return "1 hour"
         else:
-            return None
+            return unknown
 
     def __is_current_event(self, event):
         start = event.event["start"]
@@ -205,22 +208,46 @@ class Notifier:
         print(title, event.calendar, event.event["summary"])
         self.__notify_raw(title, event.calendar + ": " + event.event["summary"] + time)
 
+    def notify_foreach_event(self, should_notify_event):
+        # XXX: should_notify_event is required to return a title.
+        for event in self.events:
+            ok, title = should_notify_event(event)
+            if ok:
+                self.__notify_event(event, title)
+
     def notify(self):
         __do_morning_notify = self.__do_morning_notify()
         __do_evening_notify = self.__do_evening_notify()
-        for event in self.events:
-            if __do_evening_notify and self.__is_tomorrow_event(event):
-                self.__notify_event(event, "Tomorrow")
-            if (
-                __do_morning_notify
-                and self.__is_today_event(event)
-                and self.__is_early_event(event)
-            ):
-                self.__notify_event(event, "Today")
-            if (time_remaining := self.__is_upcoming_event(event)) is not None:
-                self.__notify_event(event, "Upcomming - " + time_remaining + " left")
-            if self.__is_current_event(event):
-                self.__notify_event(event, "Now")
+
+        def should_notify_event(event):
+            time_remaining = self.__time_remaining(event)
+            conds = [
+                (__do_evening_notify and self.__is_tomorrow_event(event), "Tomorrow"),
+                (
+                    __do_morning_notify
+                    and self.__is_today_event(event)
+                    and self.__is_early_event(event),
+                    "Today",
+                ),
+                (
+                    time_remaining != "Unknown",
+                    "Upcomming - " + time_remaining + " left",
+                ),
+                (self.__is_current_event(event), "Now"),
+            ]
+            # TODO: Ugly
+            for cond, title in conds:
+                if cond:
+                    return True, title
+            return False, ""
+
+        self.notify_foreach_event(should_notify_event)
+
+    def notify_today(self):
+        def is_today_event(event):
+            return self.__is_today_event(event), "Today"
+
+        self.notify_foreach_event(is_today_event)
 
     def extend_events(self, summary, events):
         for event in events:
@@ -248,7 +275,7 @@ def fetch_events(service, notifier, now):
 
 
 async def notify_upcoming_events(service, conf):
-    notifier = Notifier(conf)
+    global notifier
     while True:
         now = datetime.datetime.utcnow()
         print("Check event at", now)
@@ -276,15 +303,73 @@ async def notify_upcoming_events(service, conf):
         await asyncio.sleep(until_ts - now_ts)
 
 
+def handle_exit(args):
+    # TODO
+    pass
+
+
+def handle_remind(args):
+    # TODO
+    print("Remind today events")
+    global notifier
+    if notifier == None:
+        return
+    notifier.notify_today()
+
+
+def handle_command(command):
+    command_tables = {"exit": handle_exit, "remind": handle_remind}
+    toks = command.split(maxsplit=1)
+    if len(toks) < 1:
+        return
+    cmd, args = toks[0], toks[1:]
+    if cmd in command_tables:
+        command_tables[cmd](args)
+
+
+async def poll_command(service, conf):
+    import socket
+
+    sock_path_config = "socket_path"
+    sock_path_default = "/tmp/gcalnoti.socket"
+
+    sock_path = (
+        conf[sock_path_config] if sock_path_config in conf else sock_path_default
+    )
+
+    try:
+        if os.path.exists(sock_path):
+            os.unlink(sock_path)
+    except OSError:
+        if os.path.exists(sock_path):
+            raise
+
+    with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
+        sock.bind(sock_path)
+        print("receiving commands from {}".format(sock_path))
+        while True:
+            command, _ = sock.recvfrom(4096)
+            command = command.decode("utf-8")
+            command = command.strip()
+            handle_command(command)
+
+
 async def coroutine_gather(service, conf):
     coroutines = [
         update_calendar_list_loop(service, conf),
         notify_upcoming_events(service, conf),
+        poll_command(service, conf),
     ]
     return await asyncio.gather(*coroutines, return_exceptions=True)
 
 
+def init_notifier(conf):
+    global notifier
+    notifier = Notifier(conf)
+
+
 def notification_loop(service, conf):
+    init_notifier(conf)
     try:
         asyncio.run(coroutine_gather(service, conf))
     except Exception as e:
