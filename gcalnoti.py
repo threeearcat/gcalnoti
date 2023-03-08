@@ -28,11 +28,6 @@ auth_error = "Failed to fetch calendars. Need to re-authenticate."
 exit_message = "Exiting..."
 
 
-def __notify_raw(title, msg):
-    notify = Notify.Notification.new(title, msg)
-    notify.show()
-
-
 def filter_calendar(calendar, regexps):
     import re
 
@@ -197,6 +192,10 @@ class Notifier:
         else:
             return False
 
+    def __notify_raw(self, title, msg):
+        notify = Notify.Notification.new(title, msg)
+        notify.show()
+
     def __notify_event(self, event, title):
         time = ""
         start = event.event["start"]
@@ -204,7 +203,7 @@ class Notifier:
             dateTime = datetime.datetime.fromisoformat(start["dateTime"])
             time = " at " + dateTime.strftime("%H:%M")
         print(title, event.calendar, event.event["summary"])
-        __notify_raw(title, event.calendar + ": " + event.event["summary"] + time)
+        self.__notify_raw(title, event.calendar + ": " + event.event["summary"] + time)
 
     def notify(self):
         __do_morning_notify = self.__do_morning_notify()
@@ -229,14 +228,15 @@ class Notifier:
 
 
 def fetch_events(service, notifier, now):
-    now_utc = now.isoformat() + "Z"  # 'Z' indicates UTC time
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_utc = today.isoformat() + "Z"  # 'Z' indicates UTC time
     for calendar in calendars:
         summary = calendar["summary"]
         events_result = (
             service.events()
             .list(
                 calendarId=calendar["id"],
-                timeMin=now_utc,
+                timeMin=today_utc,
                 maxResults=10,
                 singleEvents=True,
                 orderBy="startTime",
@@ -257,7 +257,7 @@ async def notify_upcoming_events(service, conf):
         try:
             fetch_events(service, notifier, now)
         except Exception:
-            __notify_raw(app_name, auth_error)
+            notifier.__notify_raw(app_name, auth_error)
             retrieve_failed = True
         notifier.notify()
         print("notification done")
@@ -301,8 +301,13 @@ def load_conf(filename):
         return conf
 
 
-def exit_callback():
-    __notify_raw(app_name, exit_message)
+def exit_callback(signum, frame):
+    signame = ""
+    if signum is not None:
+        signame = " ({})".format(signal.Signals(signum).name)
+    notify = Notify.Notification.new(app_name, exit_message + signame)
+    notify.show()
+    exit(0)
 
 
 def main():
@@ -359,7 +364,4 @@ if __name__ == "__main__":
     ]
     for sign in signals:
         signal.signal(sign, exit_callback)
-    try:
-        main()
-    finally:
-        exit_callback()
+    main()
