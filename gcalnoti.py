@@ -133,6 +133,17 @@ class Notifier:
             return True
         return False
 
+    def __is_early_event(self, event):
+        start = event.event["start"]
+        if "date" in start:
+            # All day event
+            return True
+        elif "dateTime" in start:
+            dateTime = datetime.datetime.fromisoformat(start["dateTime"])
+            return dateTime.hour < self.reminder_threshold
+        else:
+            return False
+
     def __is_today_event(self, event):
         start = event.event["start"]
         today = datetime.date.today()
@@ -141,8 +152,7 @@ class Notifier:
             return date.date() == today
         elif "dateTime" in start:
             dateTime = datetime.datetime.fromisoformat(start["dateTime"])
-            if dateTime.hour < self.reminder_threshold and dateTime.date() == today:
-                return True
+            return dateTime.date() == today
         else:
             return False
 
@@ -202,7 +212,11 @@ class Notifier:
         for event in self.events:
             if __do_evening_notify and self.__is_tomorrow_event(event):
                 self.__notify_event(event, "Tomorrow")
-            if __do_morning_notify and self.__is_today_event(event):
+            if (
+                __do_morning_notify
+                and self.__is_today_event(event)
+                and self.__is_early_event(event)
+            ):
                 self.__notify_event(event, "Today")
             if (time_remaining := self.__is_upcoming_event(event)) is not None:
                 self.__notify_event(event, "Upcomming - " + time_remaining + " left")
