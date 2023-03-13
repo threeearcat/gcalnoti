@@ -454,7 +454,6 @@ if __name__ == "__main__":
         signal.SIGUSR1,
         signal.SIGUSR2,
         signal.SIGTERM,
-        signal.SIGCHLD,
     ]
     for sign in signals:
         signal.signal(sign, exit_callback)
