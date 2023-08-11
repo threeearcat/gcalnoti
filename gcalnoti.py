@@ -215,10 +215,13 @@ class Notifier:
 
     def notify_foreach_event(self, should_notify_event):
         # XXX: should_notify_event is required to return a title.
+        notified = False
         for event in self.events:
             ok, title = should_notify_event(event)
             if ok:
                 self.__notify_event(event, title)
+                notified = True
+        return notified
 
     def notify(self):
         __do_morning_notify = self.__do_morning_notify()
@@ -256,7 +259,9 @@ class Notifier:
             else:
                 return self.__is_today_event(event), "Today"
 
-        self.notify_foreach_event(should_remind_event)
+        notified = self.notify_foreach_event(should_remind_event)
+        if not notified:
+            self.__notify_raw("Reminder", "Your day is clear")
 
     def extend_events(self, summary, events):
         for event in events:
