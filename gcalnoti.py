@@ -107,6 +107,7 @@ class Notifier:
         self.prev = self.time
         self.time = datetime.datetime.now()
         if self.prev == None or self.time.day != self.prev.day:
+            self.notified_upcoming_events = {}
             self.evening_notify_done = False
             self.morning_notify_done = False
 
@@ -202,7 +203,24 @@ class Notifier:
         notify = Notify.Notification.new(title, msg)
         notify.show()
 
+    def __is_already_notified_event(self, event, title):
+        id = event.event["id"]
+        if title not in self.notified_upcoming_events:
+            return False
+        if id not in self.notified_upcoming_events[title]:
+            return False
+        return True
+
+    def __record_notified_event(self, event, title):
+        id = event.event["id"]
+        if title not in self.notified_upcoming_events:
+            self.notified_upcoming_events[title] = set()
+        self.notified_upcoming_events[title].add(id)
+
     def __notify_event(self, event, title):
+        if self.__is_already_notified_event(event, title):
+            return
+        self.__record_notified_event(event, title)
         time = ""
         start = event.event["start"]
         if "dateTime" in start:
