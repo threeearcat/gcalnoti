@@ -179,8 +179,10 @@ class Notifier:
         elif "dateTime" in start:
             dateTime = datetime.datetime.fromisoformat(start["dateTime"])
             diff = dateTime.timestamp() - self.time.timestamp()
-            if diff < 5 * 60 or diff > 1 * 60 * 60:
+            if diff < 0 or diff > 1 * 60 * 60:
                 return unknown
+            elif diff < 5 * 60:
+                return "5 minutes"
             elif diff < 30 * 60:
                 return "30 minutes"
             else:
