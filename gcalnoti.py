@@ -100,8 +100,8 @@ class Notifier:
         self.evening_notify_hour = (
             21 if not "evening_notify" in conf else conf["evening_notify"]
         )
-        self.reminder_threshold = (
-            15 if not "reminder_threshold" in conf else conf["reminder_threshold"]
+        self.morning_threshold = (
+            15 if not "morning_threshold" in conf else conf["morning_threshold"]
         )
 
     def reinit(self):
@@ -130,14 +130,14 @@ class Notifier:
             return True
         return False
 
-    def __is_early_event(self, event):
+    def __is_morning_event(self, event):
         start = event.event["start"]
         if "date" in start:
             # All day event
             return True
         elif "dateTime" in start:
             dateTime = datetime.datetime.fromisoformat(start["dateTime"])
-            return dateTime.hour < self.reminder_threshold
+            return dateTime.hour < self.morning_threshold
         else:
             return False
 
@@ -166,7 +166,7 @@ class Notifier:
             return start_date.date() <= tomorrow and tomorrow <= end_date.date()
         elif "dateTime" in start:
             dateTime = datetime.datetime.fromisoformat(start["dateTime"])
-            if dateTime.hour < self.reminder_threshold and dateTime.date() == tomorrow:
+            if dateTime.hour < self.morning_threshold and dateTime.date() == tomorrow:
                 return True
         else:
             return False
@@ -234,7 +234,7 @@ class Notifier:
                 (
                     __do_morning_notify
                     and self.__is_today_event(event)
-                    and self.__is_early_event(event),
+                    and self.__is_morning_event(event),
                     "Today",
                 ),
                 (
