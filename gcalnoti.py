@@ -323,7 +323,7 @@ async def notify_upcoming_events(service, conf):
 
         # Recalculate now
         now_ts = datetime.datetime.utcnow().timestamp()
-        period_min = (30 if not retrieve_failed else 300)
+        period_min = (5 if not retrieve_failed else 300)
         period_sec = 60 * period_min
 
         def calc_until(now, period):
