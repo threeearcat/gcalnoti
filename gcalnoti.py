@@ -90,10 +90,6 @@ class Notifier:
             self.event = event
 
     def __init__(self, conf):
-        self.time = datetime.datetime.now()
-        self.evening_notify_done = False
-        self.morning_notify_done = False
-        self.events = []
         self.morning_notify_hour = (
             10 if not "morning_notify" in conf else conf["morning_notify"]
         )
@@ -103,12 +99,14 @@ class Notifier:
         self.morning_threshold = (
             15 if not "morning_threshold" in conf else conf["morning_threshold"]
         )
+        self.time = None
+        self.reinit()
 
     def reinit(self):
         self.events = []
         self.prev = self.time
         self.time = datetime.datetime.now()
-        if self.time.day != self.prev.day:
+        if self.prev == None or self.time.day != self.prev.day:
             self.evening_notify_done = False
             self.morning_notify_done = False
 
