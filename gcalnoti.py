@@ -305,16 +305,18 @@ async def notify_upcoming_events(service, conf):
 
         # Recalculate now
         now_ts = datetime.datetime.utcnow().timestamp()
-        period = 60 * (30 if not retrieve_failed else 300)
+        period_min = (30 if not retrieve_failed else 300)
+        period_sec = 60 * period_min
 
         def calc_until(now, period):
             import math
 
             return (period * (math.floor(now / period))) + period
 
-        until_ts = calc_until(now_ts, period)
-        print("Will check again after", until_ts - now_ts)
-        await asyncio.sleep(until_ts - now_ts)
+        until_ts = calc_until(now_ts, period_sec)
+        waiting_ts = until_ts - now_ts
+        print("Will check again after", waiting_ts)
+        await asyncio.sleep(waiting_ts)
 
 
 def handle_exit(args):
@@ -343,6 +345,7 @@ def handle_command(command):
 
 async def poll_command(service, conf):
     import socket
+    import errno
 
     sock_path_config = "socket_path"
     sock_path_default = "/tmp/gcalnoti.socket"
@@ -359,13 +362,23 @@ async def poll_command(service, conf):
             raise
 
     with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
+        sock.setblocking(False)
         sock.bind(sock_path)
         print("receiving commands from {}".format(sock_path))
         while True:
-            command, _ = sock.recvfrom(4096)
-            command = command.decode("utf-8")
-            command = command.strip()
-            handle_command(command)
+            try:
+                command, _ = sock.recvfrom(4096)
+            except OSError as e:
+                err = e.args[0]
+                if err == errno.EAGAIN or err == errno.EWOULDBLOCK:
+                    await asyncio.sleep(0)
+                else:
+                    print(e)
+                    sys.exit(1)
+            else:
+                command = command.decode("utf-8")
+                command = command.strip()
+                handle_command(command)
 
 
 async def coroutine_gather(service, conf):
