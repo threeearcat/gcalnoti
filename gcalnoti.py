@@ -302,6 +302,41 @@ class Notifier:
         if not notified:
             self._notify_raw("Reminder", "Your day is clear")
 
+    def __format_event_time(self, event):
+        start = event.event["start"]
+        if "date" in start:
+            return "All day"
+        elif "dateTime" in start:
+            dt = datetime.datetime.fromisoformat(start["dateTime"])
+            return dt.strftime("%H:%M")
+        return ""
+
+    def show_today_events(self):
+        today_events = [e for e in self.events if self.__is_today_event(e)]
+        if not today_events:
+            self._notify_raw("Today's Events", "No events today")
+            return
+
+        # Sort by start time
+        def get_start_time(e):
+            start = e.event["start"]
+            if "date" in start:
+                return datetime.datetime.min
+            elif "dateTime" in start:
+                return datetime.datetime.fromisoformat(start["dateTime"])
+            return datetime.datetime.min
+
+        today_events.sort(key=get_start_time)
+
+        lines = []
+        for event in today_events:
+            time_str = self.__format_event_time(event)
+            summary = event.event.get("summary", "(No title)")
+            lines.append(f"{time_str} - {summary}")
+
+        msg = "\n".join(lines)
+        self._notify_raw(f"Today's Events ({len(today_events)})", msg)
+
     def __should_ignore_event(self, event):
         import re
         event_summary = event.get("summary", "")
@@ -380,8 +415,16 @@ def handle_remind(args):
     notifier.remind_events()
 
 
+def handle_today(args):
+    logger.info("Show today events")
+    global notifier
+    if notifier == None:
+        return
+    notifier.show_today_events()
+
+
 def handle_command(command):
-    command_tables = {"exit": handle_exit, "remind": handle_remind}
+    command_tables = {"exit": handle_exit, "remind": handle_remind, "today": handle_today}
     toks = command.split(maxsplit=1)
     if len(toks) < 1:
         return
