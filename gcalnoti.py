@@ -257,7 +257,7 @@ class Notifier:
                 ),
                 (
                     time_remaining != "Unknown",
-                    "Upcomming - " + time_remaining + " left",
+                    "Upcoming - " + time_remaining + " left",
                 ),
                 (self.__is_current_event(event), "Now"),
             ]
@@ -309,7 +309,7 @@ def fetch_events(service, notifier, now):
 async def notify_upcoming_events(service, conf):
     global notifier
     while True:
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.UTC)
         print("Check event at", now)
         notifier.reinit()
         retrieve_failed = False
@@ -322,7 +322,7 @@ async def notify_upcoming_events(service, conf):
         print("notification done")
 
         # Recalculate now
-        now_ts = datetime.datetime.utcnow().timestamp()
+        now_ts = datetime.datetime.now(datetime.UTC).timestamp()
         period_min = (5 if not retrieve_failed else 300)
         period_sec = 60 * period_min
 
