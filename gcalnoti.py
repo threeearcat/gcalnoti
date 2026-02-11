@@ -42,6 +42,7 @@ auth_error = "Failed to fetch calendars. Need to re-authenticate."
 exit_message = "Exiting..."
 
 notifier = None
+service = None
 conf = {}
 conf_path = None
 
@@ -353,7 +354,8 @@ class Notifier:
 
 def fetch_events(service, notifier, now):
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_utc = today.isoformat() + "Z"  # 'Z' indicates UTC time
+    # Convert to RFC3339 format (replace +00:00 with Z for UTC)
+    today_utc = today.isoformat().replace("+00:00", "Z")
     for calendar in calendars:
         summary = calendar["summary"]
         events_result = (
@@ -380,7 +382,8 @@ async def notify_upcoming_events(service, conf):
         retrieve_failed = False
         try:
             fetch_events(service, notifier, now)
-        except Exception:
+        except Exception as e:
+            logger.error("Failed to fetch events: %s", e)
             notifier._notify_raw(app_name, auth_error)
             retrieve_failed = True
         notifier.notify()
@@ -417,8 +420,17 @@ def handle_remind(args):
 
 def handle_today(args):
     logger.info("Show today events")
-    global notifier
-    if notifier == None:
+    global notifier, service
+    if notifier == None or service == None:
+        return
+    # Fetch fresh events
+    notifier.events = []
+    now = datetime.datetime.now(datetime.UTC)
+    try:
+        fetch_events(service, notifier, now)
+    except Exception as e:
+        logger.error("Failed to fetch events for today: %s", e)
+        notifier._notify_raw(app_name, "Failed to fetch events")
         return
     notifier.show_today_events()
 
@@ -485,7 +497,9 @@ def init_notifier(conf):
     notifier = Notifier(conf)
 
 
-def notification_loop(service, conf):
+def notification_loop(svc, conf):
+    global service
+    service = svc
     init_notifier(conf)
     try:
         asyncio.run(coroutine_gather(service, conf))
