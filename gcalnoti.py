@@ -90,15 +90,12 @@ class Notifier:
             self.event = event
 
     def __init__(self, conf):
-        self.morning_notify_hour = (
-            10 if not "morning_notify" in conf else conf["morning_notify"]
-        )
-        self.evening_notify_hour = (
-            21 if not "evening_notify" in conf else conf["evening_notify"]
-        )
-        self.morning_threshold = (
-            15 if not "morning_threshold" in conf else conf["morning_threshold"]
-        )
+        self.conf = conf
+        self.morning_notify_hour = conf.get("morning_notify", 10)
+        self.evening_notify_hour = conf.get("evening_notify", 21)
+        self.morning_threshold = conf.get("morning_threshold", 15)
+        # notify_before: list of minutes before event to notify (default: [5, 30, 60])
+        self.notify_before = sorted(conf.get("notify_before", [5, 30, 60]))
         self.time = None
         self.reinit()
 
@@ -179,14 +176,14 @@ class Notifier:
         elif "dateTime" in start:
             dateTime = datetime.datetime.fromisoformat(start["dateTime"])
             diff = dateTime.timestamp() - self.time.timestamp()
-            if diff < 0 or diff > 1 * 60 * 60:
+            max_notify = max(self.notify_before) if self.notify_before else 60
+            if diff < 0 or diff > max_notify * 60:
                 return unknown
-            elif diff < 5 * 60:
-                return "5 minutes"
-            elif diff < 30 * 60:
-                return "30 minutes"
-            else:
-                return "1 hour"
+            # Find the smallest threshold that diff falls under
+            for minutes in self.notify_before:
+                if diff < minutes * 60:
+                    return f"{minutes} minutes"
+            return unknown
         else:
             return unknown
 
