@@ -105,7 +105,7 @@ class Notifier:
     def reinit(self):
         self.events = []
         self.prev = self.time
-        self.time = datetime.datetime.now()
+        self.time = datetime.datetime.now().astimezone()
         if self.prev == None or self.time.day != self.prev.day:
             self.notified_upcoming_events = {}
             self.evening_notify_done = False
@@ -271,7 +271,7 @@ class Notifier:
 
     def remind_events(self):
         def should_remind_event(event):
-            now = datetime.datetime.now()
+            now = datetime.datetime.now().astimezone()
             if now.hour >= self.evening_notify_hour:
                 return self.__is_tomorrow_event(event), "Tomorrow"
             else:
