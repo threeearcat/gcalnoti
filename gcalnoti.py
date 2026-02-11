@@ -28,6 +28,8 @@ auth_error = "Failed to fetch calendars. Need to re-authenticate."
 exit_message = "Exiting..."
 
 notifier = None
+conf = {}
+conf_path = None
 
 
 def filter_calendar(calendar, regexps):
@@ -90,6 +92,14 @@ class Notifier:
             self.event = event
 
     def __init__(self, conf):
+        self.time = None
+        self.notified_upcoming_events = {}
+        self.evening_notify_done = False
+        self.morning_notify_done = False
+        self.update_conf(conf)
+        self.reinit()
+
+    def update_conf(self, conf):
         self.conf = conf
         self.morning_notify_hour = conf.get("morning_notify", 10)
         self.evening_notify_hour = conf.get("evening_notify", 21)
@@ -98,8 +108,6 @@ class Notifier:
         self.notify_before = sorted(conf.get("notify_before", [5, 30, 60]))
         # ignore_events: list of regex patterns to ignore event titles
         self.ignore_events = conf.get("ignore_events", [])
-        self.time = None
-        self.reinit()
 
     def reinit(self):
         self.events = []
@@ -448,8 +456,26 @@ def exit_callback(signum, frame):
     exit(0)
 
 
+def reload_conf_callback(signum, frame):
+    global conf, conf_path, notifier
+    print("Reloading config...")
+    try:
+        new_conf = load_conf(conf_path)
+        conf = new_conf
+        if notifier is not None:
+            notifier.update_conf(conf)
+        notify = Notify.Notification.new(app_name, "Config reloaded")
+        notify.show()
+        print("Config reloaded successfully")
+    except Exception as e:
+        print(f"Failed to reload config: {e}")
+        notify = Notify.Notification.new(app_name, f"Config reload failed: {e}")
+        notify.show()
+
+
 def main():
     """Notify upcoming events from Google calendars"""
+    global conf, conf_path
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -458,7 +484,8 @@ def main():
     parser.add_argument("--conf", action="store", help="JSON configuration")
     args = parser.parse_args()
 
-    conf = load_conf(args.conf)
+    conf_path = args.conf
+    conf = load_conf(conf_path)
 
     creds = None
     # The file TOKEN_PATH stores the user's access and refresh
@@ -493,12 +520,13 @@ def main():
 
 
 if __name__ == "__main__":
-    signals = [
+    exit_signals = [
         signal.SIGINT,
         signal.SIGUSR1,
         signal.SIGUSR2,
         signal.SIGTERM,
     ]
-    for sign in signals:
+    for sign in exit_signals:
         signal.signal(sign, exit_callback)
+    signal.signal(signal.SIGHUP, reload_conf_callback)
     main()
