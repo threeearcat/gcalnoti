@@ -96,6 +96,8 @@ class Notifier:
         self.morning_threshold = conf.get("morning_threshold", 15)
         # notify_before: list of minutes before event to notify (default: [5, 30, 60])
         self.notify_before = sorted(conf.get("notify_before", [5, 30, 60]))
+        # ignore_events: list of regex patterns to ignore event titles
+        self.ignore_events = conf.get("ignore_events", [])
         self.time = None
         self.reinit()
 
@@ -278,9 +280,18 @@ class Notifier:
         if not notified:
             self._notify_raw("Reminder", "Your day is clear")
 
+    def __should_ignore_event(self, event):
+        import re
+        event_summary = event.get("summary", "")
+        for pattern in self.ignore_events:
+            if re.search(pattern, event_summary):
+                return True
+        return False
+
     def extend_events(self, summary, events):
         for event in events:
-            self.events.append(Notifier.Entry(summary, event))
+            if not self.__should_ignore_event(event):
+                self.events.append(Notifier.Entry(summary, event))
 
 
 def fetch_events(service, notifier, now):
