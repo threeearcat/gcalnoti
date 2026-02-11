@@ -10,6 +10,20 @@ import os.path
 import datetime
 import asyncio
 import signal
+import logging
+
+# Setup logging
+LOG_PATH = os.path.join(os.environ["HOME"], ".local", "log", "gcalnoti.log")
+os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_PATH),
+        logging.StreamHandler(),
+    ],
+)
+logger = logging.getLogger(__name__)
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -66,7 +80,7 @@ def update_calendar_list(service, conf):
         # Failed to fetch the calendar list maybe due to the token
         # expiration. notify_upcoming_events() will notify, so we just
         # return in this function
-        print(e)
+        logger.error("Failed to fetch calendar list: %s", e)
         return
 
     if "ignore" in conf:
@@ -122,7 +136,7 @@ class Notifier:
         if self.evening_notify_done:
             return False
         if self.time.hour >= self.evening_notify_hour:
-            print("do evening notify")
+            logger.info("do evening notify")
             self.evening_notify_done = True
             return True
         return False
@@ -131,7 +145,7 @@ class Notifier:
         if self.morning_notify_done:
             return False
         if self.time.hour >= self.morning_notify_hour:
-            print("do morning notify")
+            logger.info("do morning notify")
             self.morning_notify_done = True
             return True
         return False
@@ -235,7 +249,7 @@ class Notifier:
         if "dateTime" in start:
             dateTime = datetime.datetime.fromisoformat(start["dateTime"])
             time = " at " + dateTime.strftime("%H:%M")
-        print(title, event.calendar, event.event["summary"])
+        logger.info("Notify: %s - %s: %s", title, event.calendar, event.event["summary"])
         self._notify_raw(title, event.calendar + ": " + event.event["summary"] + time)
 
     def notify_foreach_event(self, should_notify_event):
@@ -326,7 +340,7 @@ async def notify_upcoming_events(service, conf):
     global notifier
     while True:
         now = datetime.datetime.now(datetime.UTC)
-        print("Check event at", now)
+        logger.info("Check event at %s", now)
         notifier.reinit()
         retrieve_failed = False
         try:
@@ -335,7 +349,7 @@ async def notify_upcoming_events(service, conf):
             notifier._notify_raw(app_name, auth_error)
             retrieve_failed = True
         notifier.notify()
-        print("notification done")
+        logger.info("notification done")
 
         # Recalculate now
         now_ts = datetime.datetime.now(datetime.UTC).timestamp()
@@ -349,7 +363,7 @@ async def notify_upcoming_events(service, conf):
 
         until_ts = calc_until(now_ts, period_sec)
         waiting_ts = until_ts - now_ts
-        print("Will check again after", waiting_ts)
+        logger.debug("Will check again after %s seconds", waiting_ts)
         await asyncio.sleep(waiting_ts)
 
 
@@ -359,8 +373,7 @@ def handle_exit(args):
 
 
 def handle_remind(args):
-    # TODO
-    print("Remind today events")
+    logger.info("Remind today events")
     global notifier
     if notifier == None:
         return
@@ -398,7 +411,7 @@ async def poll_command(service, conf):
     with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
         sock.setblocking(False)
         sock.bind(sock_path)
-        print("receiving commands from {}".format(sock_path))
+        logger.info("receiving commands from %s", sock_path)
         while True:
             try:
                 command, _ = sock.recvfrom(4096)
@@ -407,7 +420,7 @@ async def poll_command(service, conf):
                 if err == errno.EAGAIN or err == errno.EWOULDBLOCK:
                     await asyncio.sleep(0)
                 else:
-                    print(e)
+                    logger.error("Socket error: %s", e)
                     sys.exit(1)
             else:
                 command = command.decode("utf-8")
@@ -434,7 +447,7 @@ def notification_loop(service, conf):
     try:
         asyncio.run(coroutine_gather(service, conf))
     except Exception as e:
-        print(e)
+        logger.error("Exception in notification loop: %s", e)
 
 
 def load_conf(filename):
@@ -458,7 +471,7 @@ def exit_callback(signum, frame):
 
 def reload_conf_callback(signum, frame):
     global conf, conf_path, notifier
-    print("Reloading config...")
+    logger.info("Reloading config...")
     try:
         new_conf = load_conf(conf_path)
         conf = new_conf
@@ -466,9 +479,9 @@ def reload_conf_callback(signum, frame):
             notifier.update_conf(conf)
         notify = Notify.Notification.new(app_name, "Config reloaded")
         notify.show()
-        print("Config reloaded successfully")
+        logger.info("Config reloaded successfully")
     except Exception as e:
-        print(f"Failed to reload config: {e}")
+        logger.error("Failed to reload config: %s", e)
         notify = Notify.Notification.new(app_name, f"Config reload failed: {e}")
         notify.show()
 
@@ -499,7 +512,7 @@ def main():
             try:
                 creds.refresh(Request())
             except Exception as e:
-                print(e)
+                logger.error("Failed to refresh credentials: %s", e)
                 notify = Notify.Notification.new(app_name, auth_error)
                 notify.show()
                 exit(-1)
@@ -516,7 +529,7 @@ def main():
         service = build("calendar", "v3", credentials=creds)
         notification_loop(service, conf)
     except HttpError as err:
-        print(err)
+        logger.error("HTTP error: %s", err)
 
 
 if __name__ == "__main__":
