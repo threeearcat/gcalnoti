@@ -201,7 +201,7 @@ class Notifier:
         else:
             return False
 
-    def __notify_raw(self, title, msg):
+    def _notify_raw(self, title, msg):
         notify = Notify.Notification.new(title, msg)
         notify.show()
 
@@ -229,7 +229,7 @@ class Notifier:
             dateTime = datetime.datetime.fromisoformat(start["dateTime"])
             time = " at " + dateTime.strftime("%H:%M")
         print(title, event.calendar, event.event["summary"])
-        self.__notify_raw(title, event.calendar + ": " + event.event["summary"] + time)
+        self._notify_raw(title, event.calendar + ": " + event.event["summary"] + time)
 
     def notify_foreach_event(self, should_notify_event):
         # XXX: should_notify_event is required to return a title.
@@ -279,7 +279,7 @@ class Notifier:
 
         notified = self.notify_foreach_event(should_remind_event)
         if not notified:
-            self.__notify_raw("Reminder", "Your day is clear")
+            self._notify_raw("Reminder", "Your day is clear")
 
     def extend_events(self, summary, events):
         for event in events:
@@ -316,7 +316,7 @@ async def notify_upcoming_events(service, conf):
         try:
             fetch_events(service, notifier, now)
         except Exception:
-            notifier.__notify_raw(app_name, auth_error)
+            notifier._notify_raw(app_name, auth_error)
             retrieve_failed = True
         notifier.notify()
         print("notification done")
