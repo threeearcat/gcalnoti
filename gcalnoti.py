@@ -313,9 +313,7 @@ class Notifier:
         return ""
 
     def show_today_events(self):
-        logger.info("Total events loaded: %d", len(self.events))
         today_events = [e for e in self.events if self.__is_today_event(e)]
-        logger.info("Today events: %d", len(today_events))
         if not today_events:
             self._notify_raw("Today's Events", "No events today")
             return
@@ -342,7 +340,6 @@ class Notifier:
             lines.append(f"{time_str} - {summary}")
 
         msg = "\n".join(lines)
-        logger.info("Sending today notification: %s", msg)
         self._notify_raw(f"Today's Events ({len(today_events)})", msg)
 
     def __should_ignore_event(self, event):
