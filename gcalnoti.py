@@ -451,13 +451,20 @@ async def poll_command(service, conf):
         sock.setblocking(False)
         sock.bind(sock_path)
         logger.info("receiving commands from %s", sock_path)
+        loop = asyncio.get_event_loop()
         while True:
+            readable = asyncio.Event()
+            loop.add_reader(sock.fileno(), readable.set)
+            try:
+                await readable.wait()
+            finally:
+                loop.remove_reader(sock.fileno())
             try:
                 command, _ = sock.recvfrom(4096)
             except OSError as e:
                 err = e.args[0]
                 if err == errno.EAGAIN or err == errno.EWOULDBLOCK:
-                    await asyncio.sleep(0)
+                    continue
                 else:
                     logger.error("Socket error: %s", e)
                     sys.exit(1)
