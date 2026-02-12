@@ -313,7 +313,9 @@ class Notifier:
         return ""
 
     def show_today_events(self):
+        logger.info("Total events loaded: %d", len(self.events))
         today_events = [e for e in self.events if self.__is_today_event(e)]
+        logger.info("Today events: %d", len(today_events))
         if not today_events:
             self._notify_raw("Today's Events", "No events today")
             return
@@ -322,12 +324,16 @@ class Notifier:
         def get_start_time(e):
             start = e.event["start"]
             if "date" in start:
-                return datetime.datetime.min
+                # All-day event, put at the beginning
+                return datetime.datetime.fromisoformat(start["date"]).replace(tzinfo=datetime.UTC)
             elif "dateTime" in start:
                 return datetime.datetime.fromisoformat(start["dateTime"])
-            return datetime.datetime.min
+            return datetime.datetime.min.replace(tzinfo=datetime.UTC)
 
-        today_events.sort(key=get_start_time)
+        try:
+            today_events.sort(key=get_start_time)
+        except Exception as e:
+            logger.error("Failed to sort events: %s", e)
 
         lines = []
         for event in today_events:
@@ -336,6 +342,7 @@ class Notifier:
             lines.append(f"{time_str} - {summary}")
 
         msg = "\n".join(lines)
+        logger.info("Sending today notification: %s", msg)
         self._notify_raw(f"Today's Events ({len(today_events)})", msg)
 
     def __should_ignore_event(self, event):
