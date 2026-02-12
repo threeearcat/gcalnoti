@@ -424,17 +424,8 @@ def handle_remind(args):
 
 def handle_today(args):
     logger.info("Show today events")
-    global notifier, service
-    if notifier == None or service == None:
-        return
-    # Fetch fresh events
-    notifier.events = []
-    now = datetime.datetime.now(datetime.UTC)
-    try:
-        fetch_events(service, notifier, now)
-    except Exception as e:
-        logger.error("Failed to fetch events for today: %s", e)
-        notifier._notify_raw(app_name, "Failed to fetch events")
+    global notifier
+    if notifier == None:
         return
     notifier.show_today_events()
 
