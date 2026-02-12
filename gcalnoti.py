@@ -11,6 +11,13 @@ import datetime
 import asyncio
 import signal
 import logging
+import sys
+import re
+import math
+import json
+import argparse
+import socket
+import errno
 
 # Setup logging
 LOG_PATH = os.path.join(os.environ["HOME"], ".local", "log", "gcalnoti.log")
@@ -48,8 +55,6 @@ conf_path = None
 
 
 def filter_calendar(calendar, regexps):
-    import re
-
     summary = calendar["summary"]
     return any(re.match(regexp, summary) for regexp in regexps)
 
@@ -84,12 +89,11 @@ def update_calendar_list(service, conf):
         logger.error("Failed to fetch calendar list: %s", e)
         return
 
-    if "ignore" in conf:
-        new_calendars = filter_calendars(new_calendars, conf["ignore"])
+    ignore_patterns = conf.get("ignore", [])
+    if ignore_patterns:
+        new_calendars = filter_calendars(new_calendars, ignore_patterns)
 
     calendars = new_calendars
-    # for calendar in new_calendars:
-    #     print(calendar['summary'])
 
 
 async def update_calendar_list_loop(service, conf):
@@ -99,7 +103,6 @@ async def update_calendar_list_loop(service, conf):
         await asyncio.sleep(30 * MIN)
 
 
-# TODO: timezone
 class Notifier:
     class Entry:
         def __init__(self, calendar, event):
@@ -128,7 +131,7 @@ class Notifier:
         self.events = []
         self.prev = self.time
         self.time = datetime.datetime.now().astimezone()
-        if self.prev == None or self.time.day != self.prev.day:
+        if self.prev is None or self.time.day != self.prev.day:
             self.notified_upcoming_events = {}
             self.evening_notify_done = False
             self.morning_notify_done = False
@@ -177,7 +180,6 @@ class Notifier:
             return False
 
     def __is_tomorrow_event(self, event):
-        # TODO: Refactoring
         start = event.event["start"]
         end = event.event["end"]
         tomorrow = datetime.date.today() + datetime.timedelta(days=1)
@@ -187,10 +189,8 @@ class Notifier:
             return start_date.date() <= tomorrow and tomorrow <= end_date.date()
         elif "dateTime" in start:
             dateTime = datetime.datetime.fromisoformat(start["dateTime"])
-            if dateTime.hour < self.morning_threshold and dateTime.date() == tomorrow:
-                return True
-        else:
-            return False
+            return dateTime.hour < self.morning_threshold and dateTime.date() == tomorrow
+        return False
 
     def __time_remaining(self, event):
         unknown = "Unknown"
@@ -343,7 +343,6 @@ class Notifier:
         self._notify_raw(f"Today's Events ({len(today_events)})", msg)
 
     def __should_ignore_event(self, event):
-        import re
         event_summary = event.get("summary", "")
         for pattern in self.ignore_events:
             if re.search(pattern, event_summary):
@@ -399,8 +398,6 @@ async def notify_upcoming_events(service, conf):
         period_sec = 60 * period_min
 
         def calc_until(now, period):
-            import math
-
             return (period * (math.floor(now / period))) + period
 
         until_ts = calc_until(now_ts, period_sec)
@@ -417,7 +414,7 @@ def handle_exit(args):
 def handle_remind(args):
     logger.info("Remind today events")
     global notifier
-    if notifier == None:
+    if notifier is None:
         return
     notifier.remind_events()
 
@@ -425,7 +422,7 @@ def handle_remind(args):
 def handle_today(args):
     logger.info("Show today events")
     global notifier
-    if notifier == None:
+    if notifier is None:
         return
     notifier.show_today_events()
 
@@ -441,15 +438,7 @@ def handle_command(command):
 
 
 async def poll_command(service, conf):
-    import socket
-    import errno
-
-    sock_path_config = "socket_path"
-    sock_path_default = "/tmp/gcalnoti.socket"
-
-    sock_path = (
-        conf[sock_path_config] if sock_path_config in conf else sock_path_default
-    )
+    sock_path = conf.get("socket_path", "/tmp/gcalnoti.socket")
 
     try:
         if os.path.exists(sock_path):
@@ -503,8 +492,6 @@ def notification_loop(svc, conf):
 
 
 def load_conf(filename):
-    import json
-
     if not isinstance(filename, str):
         return {}
     with open(filename) as f:
@@ -522,13 +509,15 @@ def exit_callback(signum, frame):
 
 
 def reload_conf_callback(signum, frame):
-    global conf, conf_path, notifier
+    global conf, conf_path, notifier, service
     logger.info("Reloading config...")
     try:
         new_conf = load_conf(conf_path)
         conf = new_conf
         if notifier is not None:
             notifier.update_conf(conf)
+        if service is not None:
+            update_calendar_list(service, conf)
         notify = Notify.Notification.new(app_name, "Config reloaded")
         notify.show()
         logger.info("Config reloaded successfully")
@@ -541,7 +530,6 @@ def reload_conf_callback(signum, frame):
 def main():
     """Notify upcoming events from Google calendars"""
     global conf, conf_path
-    import argparse
 
     parser = argparse.ArgumentParser(
         description="Notify upcoming events from Google calendars"
