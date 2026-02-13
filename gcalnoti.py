@@ -339,8 +339,18 @@ class Notifier:
             summary = event.event.get("summary", "(No title)")
             lines.append(f"{time_str} - {summary}")
 
-        msg = "\n".join(lines)
-        self._notify_raw(f"Today's Events ({len(today_events)})", msg)
+        # Split into chunks to avoid dunst truncation
+        max_lines = 8
+        total = len(today_events)
+        for i in range(0, len(lines), max_lines):
+            chunk = lines[i:i + max_lines]
+            part = i // max_lines + 1
+            parts = math.ceil(len(lines) / max_lines)
+            if parts == 1:
+                title = f"Today's Events ({total})"
+            else:
+                title = f"Today's Events ({total}) [{part}/{parts}]"
+            self._notify_raw(title, "\n".join(chunk))
 
     def __should_ignore_event(self, event):
         event_summary = event.get("summary", "")
