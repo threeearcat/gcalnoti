@@ -300,10 +300,16 @@ class Notifier:
             return dt.strftime("%H:%M")
         return ""
 
-    def show_today_events(self):
-        today_events = [e for e in self.events if self.__is_today_event(e)]
+    def show_events(self):
+        now = datetime.datetime.now().astimezone()
+        if now.hour >= self.evening_notify_hour:
+            label = "Tomorrow"
+            today_events = [e for e in self.events if self.__is_tomorrow_event(e)]
+        else:
+            label = "Today"
+            today_events = [e for e in self.events if self.__is_today_event(e)]
         if not today_events:
-            self._notify_raw("Today's Events", "No events today")
+            self._notify_raw(f"{label}'s Events", "No events")
             return
 
         # Sort by start time
@@ -335,9 +341,9 @@ class Notifier:
             part = i // max_lines + 1
             parts = math.ceil(len(lines) / max_lines)
             if parts == 1:
-                title = f"Today's Events ({total})"
+                title = f"{label}'s Events ({total})"
             else:
-                title = f"Today's Events ({total}) [{part}/{parts}]"
+                title = f"{label}'s Events ({total}) [{part}/{parts}]"
             self._notify_raw(title, "\n".join(chunk))
 
     def __should_ignore_event(self, event):
@@ -414,7 +420,7 @@ def handle_today(args):
     global notifier
     if notifier is None:
         return
-    notifier.show_today_events()
+    notifier.show_events()
 
 
 def handle_command(command):
