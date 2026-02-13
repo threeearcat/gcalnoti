@@ -172,7 +172,7 @@ class Notifier:
         if "date" in start:
             start_date = datetime.datetime.fromisoformat(start["date"])
             end_date = datetime.datetime.fromisoformat(end["date"])
-            return start_date.date() <= today and today <= end_date.date()
+            return start_date.date() <= today and today < end_date.date()
         elif "dateTime" in start:
             dateTime = datetime.datetime.fromisoformat(start["dateTime"])
             return dateTime.date() == today
@@ -186,7 +186,7 @@ class Notifier:
         if "date" in start:
             start_date = datetime.datetime.fromisoformat(start["date"])
             end_date = datetime.datetime.fromisoformat(end["date"])
-            return start_date.date() <= tomorrow and tomorrow <= end_date.date()
+            return start_date.date() <= tomorrow and tomorrow < end_date.date()
         elif "dateTime" in start:
             dateTime = datetime.datetime.fromisoformat(start["dateTime"])
             return dateTime.hour < self.morning_threshold and dateTime.date() == tomorrow
@@ -304,11 +304,11 @@ class Notifier:
         now = datetime.datetime.now().astimezone()
         if now.hour >= self.evening_notify_hour:
             label = "Tomorrow"
-            today_events = [e for e in self.events if self.__is_tomorrow_event(e)]
+            filtered_events = [e for e in self.events if self.__is_tomorrow_event(e)]
         else:
             label = "Today"
-            today_events = [e for e in self.events if self.__is_today_event(e)]
-        if not today_events:
+            filtered_events = [e for e in self.events if self.__is_today_event(e)]
+        if not filtered_events:
             self._notify_raw(f"{label}'s Events", "No events")
             return
 
@@ -323,19 +323,19 @@ class Notifier:
             return datetime.datetime.min.replace(tzinfo=datetime.UTC)
 
         try:
-            today_events.sort(key=get_start_time)
+            filtered_events.sort(key=get_start_time)
         except Exception as e:
             logger.error("Failed to sort events: %s", e)
 
         lines = []
-        for event in today_events:
+        for event in filtered_events:
             time_str = self.__format_event_time(event)
             summary = event.event.get("summary", "(No title)")
             lines.append(f"{time_str} - {summary}")
 
         # Split into chunks to avoid dunst truncation
         max_lines = 8
-        total = len(today_events)
+        total = len(filtered_events)
         for i in range(0, len(lines), max_lines):
             chunk = lines[i:i + max_lines]
             part = i // max_lines + 1
@@ -416,7 +416,7 @@ def handle_exit(args):
 
 
 def handle_today(args):
-    logger.info("Show today events")
+    logger.info("Show events")
     global notifier
     if notifier is None:
         return
