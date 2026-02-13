@@ -360,17 +360,19 @@ class Notifier:
 
 
 def fetch_events(service, notifier, now):
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    # Convert to RFC3339 format (replace +00:00 with Z for UTC)
-    today_utc = today.isoformat().replace("+00:00", "Z")
+    # Use local midnight as timeMin so early morning events are not missed
+    local_today = datetime.datetime.now().astimezone().replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    time_min = local_today.isoformat()
     for calendar in calendars:
         summary = calendar["summary"]
         events_result = (
             service.events()
             .list(
                 calendarId=calendar["id"],
-                timeMin=today_utc,
-                maxResults=10,
+                timeMin=time_min,
+                maxResults=20,
                 singleEvents=True,
                 orderBy="startTime",
             )
