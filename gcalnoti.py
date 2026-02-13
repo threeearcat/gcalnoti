@@ -291,18 +291,6 @@ class Notifier:
 
         self.notify_foreach_event(should_notify_event)
 
-    def remind_events(self):
-        def should_remind_event(event):
-            now = datetime.datetime.now().astimezone()
-            if now.hour >= self.evening_notify_hour:
-                return self.__is_tomorrow_event(event), "Tomorrow"
-            else:
-                return self.__is_today_event(event), "Today"
-
-        notified = self.notify_foreach_event(should_remind_event)
-        if not notified:
-            self._notify_raw("Reminder", "Your day is clear")
-
     def __format_event_time(self, event):
         start = event.event["start"]
         if "date" in start:
@@ -421,14 +409,6 @@ def handle_exit(args):
     pass
 
 
-def handle_remind(args):
-    logger.info("Remind today events")
-    global notifier
-    if notifier is None:
-        return
-    notifier.remind_events()
-
-
 def handle_today(args):
     logger.info("Show today events")
     global notifier
@@ -438,7 +418,7 @@ def handle_today(args):
 
 
 def handle_command(command):
-    command_tables = {"exit": handle_exit, "remind": handle_remind, "today": handle_today}
+    command_tables = {"exit": handle_exit, "today": handle_today}
     toks = command.split(maxsplit=1)
     if len(toks) < 1:
         return
