@@ -359,7 +359,7 @@ class Notifier:
                 self.events.append(Notifier.Entry(summary, event))
 
 
-def fetch_events(service, notifier, now):
+def fetch_events(service, notifier):
     # Use local midnight as timeMin so early morning events are not missed
     local_today = datetime.datetime.now().astimezone().replace(
         hour=0, minute=0, second=0, microsecond=0
@@ -390,7 +390,7 @@ async def notify_upcoming_events(service, conf):
         notifier.reinit()
         retrieve_failed = False
         try:
-            fetch_events(service, notifier, now)
+            fetch_events(service, notifier)
         except Exception as e:
             logger.error("Failed to fetch events: %s", e)
             notifier._notify_raw(app_name, auth_error)
