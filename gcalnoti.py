@@ -179,7 +179,7 @@ class Notifier:
         else:
             return False
 
-    def __is_tomorrow_event(self, event):
+    def __is_tomorrow_morning_event(self, event):
         start = event.event["start"]
         end = event.event["end"]
         tomorrow = datetime.date.today() + datetime.timedelta(days=1)
@@ -270,7 +270,7 @@ class Notifier:
         def should_notify_event(event):
             time_remaining = self.__time_remaining(event)
             conds = [
-                (__do_evening_notify and self.__is_tomorrow_event(event), "Tomorrow"),
+                (__do_evening_notify and self.__is_tomorrow_morning_event(event), "Tomorrow"),
                 (
                     __do_morning_notify
                     and self.__is_today_event(event)
@@ -304,7 +304,7 @@ class Notifier:
         now = datetime.datetime.now().astimezone()
         if now.hour >= self.evening_notify_hour:
             label = "Tomorrow"
-            filtered_events = [e for e in self.events if self.__is_tomorrow_event(e)]
+            filtered_events = [e for e in self.events if self.__is_tomorrow_morning_event(e)]
         else:
             label = "Today"
             filtered_events = [e for e in self.events if self.__is_today_event(e)]
