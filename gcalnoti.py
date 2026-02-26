@@ -250,6 +250,7 @@ class Notifier:
         return notified
 
     def notify(self):
+        self.events.sort(key=self.__get_start_time)
         do_morning = self.__do_morning_notify()
         do_evening = self.__do_evening_notify()
 
