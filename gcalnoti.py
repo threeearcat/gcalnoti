@@ -319,6 +319,7 @@ class Notifier:
         if not filtered_events:
             self._notify_raw(f"{label}'s Events", "No events")
             return
+        filtered_events.sort(key=self.__get_start_time)
         for e in filtered_events:
             calendar = self.__event_calendar(e)
             title = f"{label} - {calendar}"
