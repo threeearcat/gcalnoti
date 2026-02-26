@@ -293,7 +293,7 @@ class Notifier:
     def __event_prefix(self, event):
         time_str = self.__format_event_time(event)
         summary = event.event.get("summary", "(No title)")
-        return f"{time_str} - {summary}"
+        return f"[{time_str}] {summary}"
 
     def __event_calendar(self, event):
         personal_email = self.conf.get("personal_email", "")
