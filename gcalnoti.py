@@ -245,13 +245,9 @@ class Notifier:
         if self.__is_already_notified_event(event, title):
             return
         self.__record_notified_event(event, title)
-        time = ""
-        start = event.event["start"]
-        if "dateTime" in start:
-            dateTime = datetime.datetime.fromisoformat(start["dateTime"])
-            time = " at " + dateTime.strftime("%H:%M")
-        logger.info("Notify: %s - %s: %s", title, event.calendar, event.event["summary"])
-        self._notify_raw(title, event.calendar + ": " + event.event["summary"] + time)
+        line = self.__format_event_line(event)
+        logger.info("Notify: %s - %s", title, line)
+        self._notify_raw(title, line)
 
     def notify_foreach_event(self, should_notify_event):
         # XXX: should_notify_event is required to return a title.
@@ -264,26 +260,34 @@ class Notifier:
         return notified
 
     def notify(self):
-        __do_morning_notify = self.__do_morning_notify()
-        __do_evening_notify = self.__do_evening_notify()
+        do_morning = self.__do_morning_notify()
+        do_evening = self.__do_evening_notify()
 
+        # Batched morning/evening notifications
+        if do_morning:
+            morning_events = [
+                e for e in self.events
+                if self.__is_today_event(e) and self.__is_morning_event(e)
+            ]
+            self.__notify_events_batched(morning_events, "Today")
+
+        if do_evening:
+            evening_events = [
+                e for e in self.events
+                if self.__is_tomorrow_morning_event(e)
+            ]
+            self.__notify_events_batched(evening_events, "Tomorrow")
+
+        # Individual upcoming/now notifications
         def should_notify_event(event):
             time_remaining = self.__time_remaining(event)
             conds = [
-                (__do_evening_notify and self.__is_tomorrow_morning_event(event), "Tomorrow"),
-                (
-                    __do_morning_notify
-                    and self.__is_today_event(event)
-                    and self.__is_morning_event(event),
-                    "Today",
-                ),
                 (
                     time_remaining != "Unknown",
                     "Upcoming - " + time_remaining + " left",
                 ),
                 (self.__is_current_event(event), "Now"),
             ]
-            # TODO: Ugly
             for cond, title in conds:
                 if cond:
                     return True, title
@@ -300,6 +304,42 @@ class Notifier:
             return dt.strftime("%H:%M")
         return ""
 
+    def __format_event_line(self, event):
+        time_str = self.__format_event_time(event)
+        summary = event.event.get("summary", "(No title)")
+        return f"{event.calendar}: {time_str} - {summary}"
+
+    def __get_start_time(self, e):
+        start = e.event["start"]
+        if "date" in start:
+            return datetime.datetime.fromisoformat(start["date"]).replace(tzinfo=datetime.UTC)
+        elif "dateTime" in start:
+            return datetime.datetime.fromisoformat(start["dateTime"])
+        return datetime.datetime.min.replace(tzinfo=datetime.UTC)
+
+    def __notify_events_batched(self, events, label):
+        if not events:
+            return
+        try:
+            events.sort(key=self.__get_start_time)
+        except Exception as e:
+            logger.error("Failed to sort events: %s", e)
+
+        lines = [self.__format_event_line(event) for event in events]
+
+        # Split into chunks to avoid dunst truncation
+        max_lines = 8
+        total = len(events)
+        for i in range(0, len(lines), max_lines):
+            chunk = lines[i:i + max_lines]
+            part = i // max_lines + 1
+            parts = math.ceil(len(lines) / max_lines)
+            if parts == 1:
+                title = f"{label}'s Events ({total})"
+            else:
+                title = f"{label}'s Events ({total}) [{part}/{parts}]"
+            self._notify_raw(title, "\n".join(chunk))
+
     def show_events(self):
         now = datetime.datetime.now().astimezone()
         if now.hour >= self.evening_notify_hour:
@@ -311,40 +351,7 @@ class Notifier:
         if not filtered_events:
             self._notify_raw(f"{label}'s Events", "No events")
             return
-
-        # Sort by start time
-        def get_start_time(e):
-            start = e.event["start"]
-            if "date" in start:
-                # All-day event, put at the beginning
-                return datetime.datetime.fromisoformat(start["date"]).replace(tzinfo=datetime.UTC)
-            elif "dateTime" in start:
-                return datetime.datetime.fromisoformat(start["dateTime"])
-            return datetime.datetime.min.replace(tzinfo=datetime.UTC)
-
-        try:
-            filtered_events.sort(key=get_start_time)
-        except Exception as e:
-            logger.error("Failed to sort events: %s", e)
-
-        lines = []
-        for event in filtered_events:
-            time_str = self.__format_event_time(event)
-            summary = event.event.get("summary", "(No title)")
-            lines.append(f"{time_str} - {summary}")
-
-        # Split into chunks to avoid dunst truncation
-        max_lines = 8
-        total = len(filtered_events)
-        for i in range(0, len(lines), max_lines):
-            chunk = lines[i:i + max_lines]
-            part = i // max_lines + 1
-            parts = math.ceil(len(lines) / max_lines)
-            if parts == 1:
-                title = f"{label}'s Events ({total})"
-            else:
-                title = f"{label}'s Events ({total}) [{part}/{parts}]"
-            self._notify_raw(title, "\n".join(chunk))
+        self.__notify_events_batched(filtered_events, label)
 
     def __should_ignore_event(self, event):
         event_summary = event.get("summary", "")
