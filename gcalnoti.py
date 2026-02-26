@@ -229,11 +229,11 @@ class Notifier:
             self.notified_upcoming_events[title] = set()
         self.notified_upcoming_events[title].add(id)
 
-    def __notify_event(self, event, title):
+    def __notify_event(self, event, title, pad_width=0):
         if self.__is_already_notified_event(event, title):
             return
         self.__record_notified_event(event, title)
-        line = self.__format_event_line(event)
+        line = self.__format_event_line(event, pad_width)
         logger.info("Notify: %s - %s", title, line)
         self._notify_raw(title, line)
 
@@ -251,20 +251,18 @@ class Notifier:
         do_morning = self.__do_morning_notify()
         do_evening = self.__do_evening_notify()
 
-        # Batched morning/evening notifications
+        # Morning/evening notifications
         if do_morning:
-            morning_events = [
-                e for e in self.events
-                if self.__is_today_event(e)
-            ]
-            self.__notify_events_batched(morning_events, "Today")
+            morning_events = [e for e in self.events if self.__is_today_event(e)]
+            pad = self.__calc_pad_width(morning_events)
+            for e in morning_events:
+                self.__notify_event(e, "Today", pad)
 
         if do_evening:
-            evening_events = [
-                e for e in self.events
-                if self.__is_tomorrow_event(e)
-            ]
-            self.__notify_events_batched(evening_events, "Tomorrow")
+            evening_events = [e for e in self.events if self.__is_tomorrow_event(e)]
+            pad = self.__calc_pad_width(evening_events)
+            for e in evening_events:
+                self.__notify_event(e, "Tomorrow", pad)
 
         # Individual upcoming/now notifications
         def should_notify_event(event):
@@ -292,12 +290,22 @@ class Notifier:
             return dt.strftime("%H:%M")
         return ""
 
-    def __format_event_line(self, event):
+    def __event_prefix(self, event):
         time_str = self.__format_event_time(event)
         summary = event.event.get("summary", "(No title)")
+        return f"{time_str} - {summary}"
+
+    def __event_calendar(self, event):
         personal_email = self.conf.get("personal_email", "")
-        calendar = event.calendar if event.calendar != personal_email else "Personal"
-        return f"{calendar}: {time_str} - {summary}"
+        return "Personal" if event.calendar == personal_email else event.calendar
+
+    def __format_event_line(self, event, pad_width=0):
+        prefix = self.__event_prefix(event)
+        calendar = self.__event_calendar(event)
+        return f"{prefix:<{pad_width}}    {calendar}"
+
+    def __calc_pad_width(self, events):
+        return max((len(self.__event_prefix(e)) for e in events), default=0)
 
     def __get_start_time(self, e):
         start = e.event["start"]
@@ -306,29 +314,6 @@ class Notifier:
         elif "dateTime" in start:
             return datetime.datetime.fromisoformat(start["dateTime"])
         return datetime.datetime.min.replace(tzinfo=datetime.UTC)
-
-    def __notify_events_batched(self, events, label):
-        if not events:
-            return
-        try:
-            events.sort(key=self.__get_start_time)
-        except Exception as e:
-            logger.error("Failed to sort events: %s", e)
-
-        lines = [self.__format_event_line(event) for event in events]
-
-        # Split into chunks to avoid dunst truncation
-        max_lines = 8
-        total = len(events)
-        for i in range(0, len(lines), max_lines):
-            chunk = lines[i:i + max_lines]
-            part = i // max_lines + 1
-            parts = math.ceil(len(lines) / max_lines)
-            if parts == 1:
-                title = f"{label}'s Events ({total})"
-            else:
-                title = f"{label}'s Events ({total}) [{part}/{parts}]"
-            self._notify_raw(title, "\n".join(chunk))
 
     def show_events(self):
         now = datetime.datetime.now().astimezone()
@@ -341,7 +326,9 @@ class Notifier:
         if not filtered_events:
             self._notify_raw(f"{label}'s Events", "No events")
             return
-        self.__notify_events_batched(filtered_events, label)
+        pad = self.__calc_pad_width(filtered_events)
+        for e in filtered_events:
+            self.__notify_event(e, label, pad)
 
     def __should_ignore_event(self, event):
         event_summary = event.get("summary", "")
