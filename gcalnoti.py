@@ -230,11 +230,11 @@ class Notifier:
             self.notified_upcoming_events[title] = set()
         self.notified_upcoming_events[title].add(id)
 
-    def __notify_event(self, event, title, pad_width=0):
+    def __notify_event(self, event, title, pad_width=0, cal_width=0):
         if self.__is_already_notified_event(event, title):
             return
         self.__record_notified_event(event, title)
-        line = self.__format_event_line(event, pad_width)
+        line = self.__format_event_line(event, pad_width, cal_width)
         logger.info("Notify: %s - %s", title, line)
         self._notify_raw(title, line)
 
@@ -255,15 +255,15 @@ class Notifier:
         # Morning/evening notifications
         if do_morning:
             morning_events = [e for e in self.events if self.__is_today_event(e)]
-            pad = self.__calc_pad_width(morning_events)
+            pw, cw = self.__calc_pad_widths(morning_events)
             for e in morning_events:
-                self.__notify_event(e, "Today", pad)
+                self.__notify_event(e, "Today", pw, cw)
 
         if do_evening:
             evening_events = [e for e in self.events if self.__is_tomorrow_event(e)]
-            pad = self.__calc_pad_width(evening_events)
+            pw, cw = self.__calc_pad_widths(evening_events)
             for e in evening_events:
-                self.__notify_event(e, "Tomorrow", pad)
+                self.__notify_event(e, "Tomorrow", pw, cw)
 
         # Individual upcoming/now notifications
         def should_notify_event(event):
@@ -307,14 +307,17 @@ class Notifier:
             width += 2 if unicodedata.east_asian_width(ch) in ('W', 'F') else 1
         return width
 
-    def __format_event_line(self, event, pad_width=0):
+    def __format_event_line(self, event, pad_width=0, cal_width=0):
         prefix = self.__event_prefix(event)
         calendar = self.__event_calendar(event)
-        padding = max(pad_width - self.__display_width(prefix), 0)
-        return f"{prefix}{' ' * padding}    {calendar}"
+        prefix_pad = max(pad_width - self.__display_width(prefix), 0)
+        cal_pad = max(cal_width - self.__display_width(calendar), 0)
+        return f"{prefix}{' ' * prefix_pad}    {' ' * cal_pad}{calendar}"
 
-    def __calc_pad_width(self, events):
-        return max((self.__display_width(self.__event_prefix(e)) for e in events), default=0)
+    def __calc_pad_widths(self, events):
+        pw = max((self.__display_width(self.__event_prefix(e)) for e in events), default=0)
+        cw = max((self.__display_width(self.__event_calendar(e)) for e in events), default=0)
+        return pw, cw
 
     def __get_start_time(self, e):
         start = e.event["start"]
@@ -335,9 +338,9 @@ class Notifier:
         if not filtered_events:
             self._notify_raw(f"{label}'s Events", "No events")
             return
-        pad = self.__calc_pad_width(filtered_events)
+        pw, cw = self.__calc_pad_widths(filtered_events)
         for e in filtered_events:
-            self.__notify_event(e, label, pad)
+            self.__notify_event(e, label, pw, cw)
 
     def __should_ignore_event(self, event):
         event_summary = event.get("summary", "")
