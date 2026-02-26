@@ -121,7 +121,6 @@ class Notifier:
         self.conf = conf
         self.morning_notify_hour = conf.get("morning_notify", 10)
         self.evening_notify_hour = conf.get("evening_notify", 21)
-        self.morning_threshold = conf.get("morning_threshold", 15)
         # notify_before: list of minutes before event to notify (default: [5, 30, 60])
         self.notify_before = sorted(conf.get("notify_before", [5, 30, 60]))
         # ignore_events: list of regex patterns to ignore event titles
@@ -154,17 +153,6 @@ class Notifier:
             return True
         return False
 
-    def __is_morning_event(self, event):
-        start = event.event["start"]
-        if "date" in start:
-            # All day event
-            return True
-        elif "dateTime" in start:
-            dateTime = datetime.datetime.fromisoformat(start["dateTime"])
-            return dateTime.hour < self.morning_threshold
-        else:
-            return False
-
     def __is_today_event(self, event):
         start = event.event["start"]
         end = event.event["end"]
@@ -179,7 +167,7 @@ class Notifier:
         else:
             return False
 
-    def __is_tomorrow_morning_event(self, event):
+    def __is_tomorrow_event(self, event):
         start = event.event["start"]
         end = event.event["end"]
         tomorrow = datetime.date.today() + datetime.timedelta(days=1)
@@ -189,7 +177,7 @@ class Notifier:
             return start_date.date() <= tomorrow and tomorrow < end_date.date()
         elif "dateTime" in start:
             dateTime = datetime.datetime.fromisoformat(start["dateTime"])
-            return dateTime.hour < self.morning_threshold and dateTime.date() == tomorrow
+            return dateTime.date() == tomorrow
         return False
 
     def __time_remaining(self, event):
@@ -267,14 +255,14 @@ class Notifier:
         if do_morning:
             morning_events = [
                 e for e in self.events
-                if self.__is_today_event(e) and self.__is_morning_event(e)
+                if self.__is_today_event(e)
             ]
             self.__notify_events_batched(morning_events, "Today")
 
         if do_evening:
             evening_events = [
                 e for e in self.events
-                if self.__is_tomorrow_morning_event(e)
+                if self.__is_tomorrow_event(e)
             ]
             self.__notify_events_batched(evening_events, "Tomorrow")
 
@@ -344,7 +332,7 @@ class Notifier:
         now = datetime.datetime.now().astimezone()
         if now.hour >= self.evening_notify_hour:
             label = "Tomorrow"
-            filtered_events = [e for e in self.events if self.__is_tomorrow_morning_event(e)]
+            filtered_events = [e for e in self.events if self.__is_tomorrow_event(e)]
         else:
             label = "Today"
             filtered_events = [e for e in self.events if self.__is_today_event(e)]
