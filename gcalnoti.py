@@ -14,6 +14,7 @@ import logging
 import sys
 import re
 import math
+import unicodedata
 import json
 import argparse
 import socket
@@ -299,13 +300,21 @@ class Notifier:
         personal_email = self.conf.get("personal_email", "")
         return "Personal" if event.calendar == personal_email else event.calendar
 
+    @staticmethod
+    def __display_width(s):
+        width = 0
+        for ch in s:
+            width += 2 if unicodedata.east_asian_width(ch) in ('W', 'F') else 1
+        return width
+
     def __format_event_line(self, event, pad_width=0):
         prefix = self.__event_prefix(event)
         calendar = self.__event_calendar(event)
-        return f"{prefix:<{pad_width}}    {calendar}"
+        padding = max(pad_width - self.__display_width(prefix), 0)
+        return f"{prefix}{' ' * padding}    {calendar}"
 
     def __calc_pad_width(self, events):
-        return max((len(self.__event_prefix(e)) for e in events), default=0)
+        return max((self.__display_width(self.__event_prefix(e)) for e in events), default=0)
 
     def __get_start_time(self, e):
         start = e.event["start"]
