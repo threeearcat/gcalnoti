@@ -320,7 +320,10 @@ class Notifier:
             self._notify_raw(f"{label}'s Events", "No events")
             return
         for e in filtered_events:
-            self.__notify_event(e, label)
+            calendar = self.__event_calendar(e)
+            title = f"{label} - {calendar}"
+            line = self.__event_prefix(e)
+            self._notify_raw(title, line)
 
     def __should_ignore_event(self, event):
         event_summary = event.get("summary", "")
