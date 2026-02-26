@@ -295,7 +295,9 @@ class Notifier:
     def __format_event_line(self, event):
         time_str = self.__format_event_time(event)
         summary = event.event.get("summary", "(No title)")
-        return f"{event.calendar}: {time_str} - {summary}"
+        personal_email = self.conf.get("personal_email", "")
+        calendar = event.calendar if event.calendar != personal_email else "Personal"
+        return f"{calendar}: {time_str} - {summary}"
 
     def __get_start_time(self, e):
         start = e.event["start"]
