@@ -33,6 +33,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from google.auth.transport.requests import Request
+from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
@@ -52,6 +53,12 @@ notifier = None
 service = None
 conf = {}
 conf_path = None
+
+
+def is_auth_error(error):
+    if isinstance(error, RefreshError):
+        return not error.retryable
+    return isinstance(error, HttpError) and error.resp.status == 401
 
 
 def filter_calendar(calendar, regexps):
@@ -87,20 +94,20 @@ def update_calendar_list(service, conf):
         # expiration. notify_upcoming_events() will notify, so we just
         # return in this function
         logger.error("Failed to fetch calendar list: %s", e)
-        return
+        return False
 
     ignore_patterns = conf.get("ignore", [])
     if ignore_patterns:
         new_calendars = filter_calendars(new_calendars, ignore_patterns)
 
     calendars = new_calendars
+    return True
 
 
 async def update_calendar_list_loop(service, conf):
     while True:
-        update_calendar_list(service, conf)
-        MIN = 60
-        await asyncio.sleep(30 * MIN)
+        updated = update_calendar_list(service, conf)
+        await asyncio.sleep(30 * 60 if updated else 60)
 
 
 class Notifier:
@@ -365,30 +372,30 @@ def fetch_events(service, notifier):
 
 async def notify_upcoming_events(service, conf):
     global notifier
+    auth_error_notified = False
     while True:
         now = datetime.datetime.now(datetime.UTC)
         logger.info("Check event at %s", now)
         notifier.reinit()
-        retrieve_failed = False
         try:
             fetch_events(service, notifier)
         except Exception as e:
             logger.error("Failed to fetch events: %s", e)
-            notifier._notify_raw(app_name, auth_error)
-            retrieve_failed = True
-        notifier.notify()
-        logger.info("notification done")
+            authentication_failed = is_auth_error(e)
+            if authentication_failed and not auth_error_notified:
+                notifier._notify_raw(app_name, auth_error)
+                auth_error_notified = True
+            waiting_ts = 5 * 60 if authentication_failed else 60
+        else:
+            auth_error_notified = False
+            notifier.notify()
+            logger.info("notification done")
 
-        # Recalculate now
-        now_ts = datetime.datetime.now(datetime.UTC).timestamp()
-        period_min = (5 if not retrieve_failed else 300)
-        period_sec = 60 * period_min
-
-        def calc_until(now, period):
-            return (period * (math.floor(now / period))) + period
-
-        until_ts = calc_until(now_ts, period_sec)
-        waiting_ts = until_ts - now_ts
+            # Align successful checks to the next five-minute boundary.
+            now_ts = datetime.datetime.now(datetime.UTC).timestamp()
+            period_sec = 5 * 60
+            until_ts = period_sec * (math.floor(now_ts / period_sec) + 1)
+            waiting_ts = until_ts - now_ts
         logger.debug("Will check again after %s seconds", waiting_ts)
         await asyncio.sleep(waiting_ts)
 
@@ -538,18 +545,24 @@ def main():
             try:
                 creds.refresh(Request())
             except Exception as e:
-                logger.error("Failed to refresh credentials: %s", e)
-                notify = Notify.Notification.new(app_name, auth_error)
-                notify.show()
-                exit(-1)
+                if is_auth_error(e):
+                    logger.error("Failed to refresh credentials: %s", e)
+                    notify = Notify.Notification.new(app_name, auth_error)
+                    notify.show()
+                    exit(-1)
+                logger.warning(
+                    "Failed to refresh credentials; will retry when fetching calendars: %s",
+                    e,
+                )
         else:
             flow = InstalledAppFlow.from_client_secrets_file(
                 "./client_secret.json", SCOPES
             )
             creds = flow.run_local_server(port=0)
         # Save the credentials for the next run
-        with open(TOKEN_PATH, "w") as token:
-            token.write(creds.to_json())
+        if creds.valid:
+            with open(TOKEN_PATH, "w") as token:
+                token.write(creds.to_json())
 
     try:
         service = build("calendar", "v3", credentials=creds)
